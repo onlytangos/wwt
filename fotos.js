@@ -1,4 +1,4 @@
-// generado por wwt/publicar/push.sh: solo las fotos públicas
+// generado por tangoinfo/publicar/push.sh: solo las fotos públicas
 const fotosPerfil=[
 "perfil_100001358213403.jpg",
 "perfil_100002148016502.jpg",
