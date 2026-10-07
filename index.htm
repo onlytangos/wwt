@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WWT</title>
 <!-- Todo se lee en su sitio, como index.htm: data/roles.js, data/*People.out.js y data/publicEvent.out.js (los crea import.sh)
-     y las fotos de import/src.fb/ (fotos.js lo genera index.sh). -->
+     y las fotos de import/src.page/ (fotos.js lo genera index.sh). -->
 <script src="data/roles.js"></script>
 <script src="data/publicPeople.out.js"></script>
 <script src="data/publicEvent.out.js"></script>
@@ -85,15 +85,20 @@ const FOTOS = 'fotos/';
 const FOTOS2 = 'fotos2/';   // portadas: las de los eventos
 const TODOS = '*';
 const EVT = 'evt';                           // opción del selector de rol: eventos (publicEvent), no personas
+const SEM = 'sem';                           // opción del selector de rol: seminarios (eventos de tipo seminar), aparte de evt
+const deEventos = r => r == EVT || r == SEM;  // opciones del selector que son eventos
 const $ = id => document.getElementById(id);
 
 function fbkey(u){
-  // clave de la foto de una url de FB (igual que fbkey de import/src.fb/fb.py y revisar.html e index.htm):
+  // clave de la foto de una url de FB (igual que fbkey de import/src.page/page.py y revisar.html e index.htm):
   // perfil -> usuario o id; evento -> event_<id>; grupo -> group_<nombre>;
   // publicacion de grupo -> post_<id>; '' si no identifica una pagina
   u=String(u||'').trim();
   const m=u.match(/[?&]id=(\d+)/); if (m) return m[1];
   const p=u.replace(/^https?:\/\/([a-z]+\.)?facebook\.com\//,'').split('?')[0].split('#')[0].split('/').filter(x => x);
+  // foto suelta -> photo_<fbid>; enlace share/... -> share_<código>
+  const fb=u.match(/[?&]fbid=(\d+)/); if (fb && p.length && ['photo','photo.php'].includes(p[0].toLowerCase())) return 'photo_'+fb[1];
+  if (p.length>1 && p[0].toLowerCase()=='share') return ('share_'+p.slice(1).join('_')).replace(/[^\w.-]/gu,'_').toLowerCase();
   if (!p.length || ['share','photo','photo.php','watch','reel','story.php','permalink.php','dyi'].includes(p[0].toLowerCase())) return '';
   let k=p[0];
   const ids=p.slice(1).filter(x => /^\d+$/.test(x));
@@ -101,6 +106,13 @@ function fbkey(u){
   else if (p[0]=='groups' && p.length>1) k=(p.length>2 && ['posts','permalink'].includes(p[2]) && ids.length) ? 'post_'+ids[ids.length-1] : 'group_'+p[1];
   else if (p[0]=='pages' && p.length>1) k=ids.length ? ids[ids.length-1] : p[1];
   return k.replace(/[^\w.-]/gu,'_').toLowerCase();
+}
+function webkey(u){
+  // clave de la foto de una url que no es de FB (igual que webkey de import/src.page/page.py): web_<sitio_ruta>
+  u=String(u||'').trim();
+  if (!/^https?:\/\//i.test(u) || /^https?:\/\/([a-z]+\.)?facebook\.com\//.test(u)) return '';
+  const s=u.toLowerCase().replace(/^https?:\/\/(www\.)?/,'').split('#')[0].replace(/\/+$/,'');
+  return ('web_'+s.replace(/[^a-z0-9.-]/g,'_').replace(/_+/g,'_').replace(/^_+|_+$/g,'')).slice(0,150);
 }
 
 // Foto (ruta): perfil_<usuarioFB> y si no perfil_<nombre>, en jpg/webp/png (como index.htm)
@@ -116,7 +128,7 @@ function foto(nombre, url){
 // Portada (ruta) de un evento: portada_<fbkey> en fotos2/; si no hay, la foto
 // de perfil de su url (página o persona), como index.htm
 function portada(url){
-  const k = /facebook\.com\//.test(url || '') ? fbkey(url) : '';
+  const k = /facebook\.com\//.test(url || '') ? fbkey(url) : webkey(url);
   if (k) for (const e of ['jpg', 'webp', 'png']) if (portadaSet.has('portada_' + k + '.' + e)) return FOTOS2 + encodeURIComponent('portada_' + k + '.' + e);
   if (k) for (const e of ['jpg', 'webp', 'png']) if (fotoSet.has('perfil_' + k + '.' + e)) return FOTOS + encodeURIComponent('perfil_' + k + '.' + e);
   return '';
@@ -158,29 +170,53 @@ function cargaFilas(filas){
 }
 
 // Eventos (opción evt): las filas de publicEvent.out.js de tipo event*, una por
-// url (o nombre y fecha). Fecha EVT.<mes>.<MES>.<días>.<año> -> '4-8 FEB 2027'.
+// evento: se juntan las de la misma url (sin http, www, mayúsculas ni / final) y
+// día de inicio (±1 día), o del mismo nombre (solo letras y números) y día de inicio (±1); la que se queda completa con
+// la otra foto, url y organizadores. Los de tipo seminar van a la opción sem, no a evt
+// (como esSeminar de index.htm). Fecha EVT.<mes>.<MES>.<días>.<año> -> '4-8 FEB 2027'.
+const claveUrl = u => String(u).toLowerCase().replace(/^https?:\/\/(www\.|m\.)?/, '').split('#')[0].replace(/\/+(\?|$)/, '$1');
+const claveNom = (n, f) => String(n).toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') + '#' + f;
+// día de inicio de EVT.<mes>.<MES>.<días>.<año> como nº de día (el día de fin no cuenta); null sin fecha EVT
+const inicio = d => {
+  const f = String(d || '').split('.'), dia = parseInt(String(f[3] || '').split('-')[0]), mes = parseInt(f[1]), anyo = parseInt(f[4]);
+  return f[0] == 'EVT' && !isNaN(dia + mes + anyo) ? Math.round(Date.UTC(anyo, mes, dia) / 864e5) : null;
+};
 function eventos(){
-  const porClave = new Map();
+  const porClave = new Map(), lista = [];
   for (const e of (typeof publicEvent == 'undefined' ? [] : publicEvent)){
     if (!String(e[3]).startsWith('event')) continue;
     const url = /^https?:\/\//.test(e[7] || '') ? e[7] : '';
-    const clave = url || e[4] + '#' + e[6];
-    if (porClave.has(clave)) continue;
+    // misma url y día de inicio (una web puede llevar varios eventos), o mismo nombre y
+    // día de inicio (solo con fecha); el día de inicio, con ±1 día de margen
+    const n = inicio(e[6]);
+    const claves = d => [url && 'u:' + claveUrl(url) + '#' + (n == null ? e[6] : n + d), n != null && 'n:' + claveNom(e[4], n + d)].filter(Boolean);
+    const ya = [0, -1, 1].flatMap(d => n == null && d ? [] : claves(d)).map(k => porClave.get(k)).find(Boolean);
+    if (ya){
+      // repetido: completa lo que le falte
+      if (!ya.fb && url) ya.fb = url;
+      if (!ya.foto) ya.foto = portada(url);
+      const orgs = String(e[5] || '').split('#').pop().split(',').map(x => x.trim().match(/^org:\s*(.+)$/)).filter(Boolean).map(m => m[1]);
+      for (const o of orgs) if (!ya.orgs.includes(o)) ya.orgs.push(o);
+      for (const k of claves(0)) if (!porClave.has(k)) porClave.set(k, ya);
+      continue;
+    }
     const f = String(e[6] || '').split('.');
     const fecha = f[0] == 'EVT' ? [f[3], f[2], f[4]].filter(Boolean).join(' ') : '';
     const orden = f[0] == 'EVT' ? (parseInt(f[4]) || 9999) * 100 + (parseInt(f[1]) || 0) : 999999;
     const mes = f[0] == 'EVT' ? parseInt(f[1]) : NaN, dia = parseInt(f[3]) || 1;   // día sin fijar ('?'): el 1
     const orgs = String(e[5] || '').split('#').pop().split(',').map(x => x.trim().match(/^org:\s*(.+)$/)).filter(Boolean).map(m => m[1]);
-    porClave.set(clave, {evento: true, area: e[0] && e[0] != '-' ? e[0] : '-', roles: [EVT], nombre: e[4], foto: portada(url),
+    const ev = {evento: true, area: e[0] && e[0] != '-' ? e[0] : '-', roles: [String(e[3]).indexOf('seminar') != -1 ? SEM : EVT], nombre: e[4], foto: portada(url),
                          fb: url, tipo: String(e[3]).replace(/^event\s*/, '') || 'event',
                          lugar: [e[2], e[1]].filter(x => x && x != '-').join(', '), fecha, orden, mes, dia, orgs,
-                         video: '', notas: [], coment: []});
+                         video: '', notas: [], coment: []};
+    for (const k of claves(0)) porClave.set(k, ev);
+    lista.push(ev);
   }
-  return [...porClave.values()];
+  return lista;
 }
 
 const enArea = (p, a) => a == TODOS || p.area == a;
-const enRol  = (p, r) => r == EVT ? !!p.evento : !p.evento && (r == TODOS || p.roles.includes(r));   // 'todos' = personas
+const enRol  = (p, r) => deEventos(r) ? !!p.evento && p.roles.includes(r) : !p.evento && (r == TODOS || p.roles.includes(r));   // 'todos' = personas
 
 function opciones(sel, valores, etiqueta, cuenta){
   // Rellena un selector con "etiqueta (n)"; conserva la opción elegida (al cargar, la de data-inicial).
@@ -357,15 +393,15 @@ function pinta(){
   const areas = [...new Set(personas.map(p => p.area))].sort((x, y) => (x == '-') - (y == '-') || x.localeCompare(y));
   opciones($('selArea'), areas, v => v == '-' ? 'sin área' : v,
            v => conFoto.filter(p => enArea(p, v) && enRol(p, r)).length);
-  // tras 'todos': events, organizer, artist; después el resto de roles
-  const PRIMEROS = {[EVT]: 'events', org: 'organizer', art: 'artist'};
+  // tras 'todos': events, seminars, organizer, artist; después el resto de roles
+  const PRIMEROS = {[EVT]: 'events', [SEM]: 'seminars', org: 'organizer', art: 'artist'};
   opciones($('selRol'), [...Object.keys(PRIMEROS), ...Object.keys(ROLES).filter(v => !(v in PRIMEROS))],
            v => PRIMEROS[v] || ROLES[v].nombre || v,
            v => conFoto.filter(p => enArea(p, a) && enRol(p, v)).length);
   $('total').textContent = 'total ' + personas.filter(p => enArea(p, a) && enRol(p, r)).length;
 
   const lista = conFoto.filter(p => enArea(p, a) && enRol(p, r))
-                        .sort((x, y) => r != EVT ? x.nombre.localeCompare(y.nombre)
+                        .sort((x, y) => !deEventos(r) ? x.nombre.localeCompare(y.nombre)
                                       : enListado ? desdeHoy(x) - desdeHoy(y) || x.nombre.localeCompare(y.nombre)   // listado: desde hoy (día y mes)
                                       : x.orden - y.orden || x.nombre.localeCompare(y.nombre));                     // parrilla: por fecha
   $('parrilla').classList.toggle('oculto', enListado);
@@ -417,7 +453,10 @@ $('info').onclick = () => {
   $('fCuerpo').innerHTML = '';
   const d = document.createElement('div');
   d.className = 'texto';
-  d.innerHTML = '<p>by KokoTango</p><p>public version</p>';
+  // perfil de FB de KoKoTango: enlace y, en la última línea, invitación a mandar urls
+  const FB = 'https://www.facebook.com/profile.php?id=100093497583670';
+  d.innerHTML = '<p><a href="' + FB + '" target="_blank" rel="noopener">by KoKoTango</a></p><p>public version</p>' +
+                '<p><a href="' + FB + '" target="_blank" rel="noopener">envía un mensaje con tus urls</a></p>';
   $('fCuerpo').appendChild(d);
   $('ficha').showModal();
   return false;
