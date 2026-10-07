@@ -32,7 +32,7 @@
   .cara { position: relative; margin: 0; background: #000; display: flex; flex-direction: column;   /* negro bajo la foto y el nombre */
            border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.5); }
   .cara img, .sinfoto { display: block; flex: none; width: 100%; aspect-ratio: 1; object-fit: contain; background: #000; }   /* foto entera sobre negro */
-  .sinfoto { display: flex; align-items: center; justify-content: center; background: var(--sinfoto); color: var(--suave); font-size: 1.3em; }
+  .cara img.sinfoto, .cuerpo > img.sinfoto { background: var(--sinfoto); }   /* imagen dummy (img/sinfoto.svg) sobre gris */
   .cara.evt { grid-column: span 2; }   /* evento: portada (fotos2/) en dos columnas, 16:9 (como revisar), recortada al hueco */
   .cara.evt img, .cara.evt .sinfoto { aspect-ratio: 16 / 9; object-fit: cover; }
   /* ficha de evento: la portada tan alta como el texto de al lado (align-self: stretch) y el ancho
@@ -60,7 +60,7 @@
   .cuerpo h2 { margin: 0 0 8px; font-size: 1.1em; }
   .cuerpo p { margin: 6px 0; font-size: .9em; overflow-wrap: anywhere; }
   /* listado: las mismas fichas, una debajo de otra */
-  .listado { display: flex; flex-direction: column; gap: 8px; max-width: 640px; }
+  .listado { display: flex; flex-direction: column; gap: 8px; max-width: 640px; margin: 0 auto; }
   .listado .cuerpo { padding: 12px; background: var(--barra); border: 1px solid var(--borde); border-radius: 8px; }
   .listado .cuerpo > img, .listado .cuerpo > .sinfoto { aspect-ratio: 16 / 9; }   /* en el listado, todas 16:9 (también las de persona) */
   .oculto { display: none; }
@@ -223,18 +223,13 @@ function enlace(href, texto, icono){
 }
 
 function cara(p){
-  // foto o, sin foto, recuadro gris con las iniciales
-  if (p.foto){
-    const img = document.createElement('img');
-    img.src = p.foto;
-    img.alt = p.nombre;
-    img.loading = 'lazy';
-    return img;
-  }
-  const sin = document.createElement('div');
-  sin.className = 'sinfoto';
-  sin.textContent = String(p.nombre).split(/\s+/).filter(Boolean).slice(0, 2).map(w => [...w][0]).join('').toUpperCase();
-  return sin;
+  // foto o, sin foto, la imagen dummy (img/sinfoto.svg) sobre gris
+  const img = document.createElement('img');
+  img.src = p.foto || 'img/sinfoto.svg';
+  img.alt = p.nombre;
+  img.loading = 'lazy';
+  if (!p.foto) img.className = 'sinfoto';
+  return img;
 }
 
 function titulo(d, p, conLugar){
@@ -254,18 +249,29 @@ function rellenaEvento(c, p, conLugar){
   d.className = 'texto';
   c.appendChild(d);
   titulo(d, p, conLugar);
-  for (const texto of [conLugar ? '' : p.lugar, p.fecha, p.orgs.length ? 'org: ' + p.orgs.join(', ') : '']){
+  for (const texto of [conLugar ? '' : p.lugar, p.fecha]){
     if (!texto) continue;
     const par = document.createElement('p');
     par.textContent = texto;
     d.appendChild(par);
   }
-  if (p.fb){
+  if (p.orgs.length){
+    // quién lo organiza, con enlace a su perfil si está entre las personas
     const par = document.createElement('p');
-    par.className = 'enlaces';
-    par.appendChild(enlace(p.fb, p.tipo, /facebook\.com\//.test(p.fb) ? 'img/perfil.svg' : ''));
+    par.appendChild(document.createTextNode('org: '));
+    p.orgs.forEach((nombre, i) => {
+      if (i) par.appendChild(document.createTextNode(', '));
+      const url = (personas.find(x => !x.evento && x.nombre == nombre && x.fb) || {}).fb;
+      par.appendChild(url ? enlace(url, nombre) : document.createTextNode(nombre));
+    });
     d.appendChild(par);
   }
+  // el tipo (festival, encuentro...): enlace al evento con el globo (el icono de user es para personas); sin url, solo el texto
+  const par = document.createElement('p');
+  par.className = 'enlaces';
+  par.appendChild(p.fb ? enlace(p.fb, p.tipo, 'img/web.svg')
+                       : document.createTextNode(p.tipo));
+  d.appendChild(par);
 }
 
 function rellenaPersona(c, p, conLugar){
@@ -343,9 +349,11 @@ function desdeHoy(p){
 function pinta(){
   const val = sel => sel.value || sel.dataset.inicial || TODOS;   // al cargar aún no hay opciones: vale data-inicial
   const a = val($('selArea')), r = val($('selRol'));
-  // Solo se listan los que tienen foto. Cada selector cuenta los que se listan
-  // según lo elegido en el otro; detrás, el total de la selección (con y sin foto)
-  const conFoto = personas.filter(p => p.foto);
+  // Solo se listan los que tienen foto, salvo los eventos en el listado (todos).
+  // Cada selector cuenta los que se listan según lo elegido en el otro; detrás,
+  // el total de la selección (con y sin foto)
+  const enListado = $('chkListado').checked;
+  const conFoto = personas.filter(p => p.foto || (enListado && p.evento));
   const areas = [...new Set(personas.map(p => p.area))].sort((x, y) => (x == '-') - (y == '-') || x.localeCompare(y));
   opciones($('selArea'), areas, v => v == '-' ? 'sin área' : v,
            v => conFoto.filter(p => enArea(p, v) && enRol(p, r)).length);
@@ -356,7 +364,6 @@ function pinta(){
            v => conFoto.filter(p => enArea(p, a) && enRol(p, v)).length);
   $('total').textContent = 'total ' + personas.filter(p => enArea(p, a) && enRol(p, r)).length;
 
-  const enListado = $('chkListado').checked;
   const lista = conFoto.filter(p => enArea(p, a) && enRol(p, r))
                         .sort((x, y) => r != EVT ? x.nombre.localeCompare(y.nombre)
                                       : enListado ? desdeHoy(x) - desdeHoy(y) || x.nombre.localeCompare(y.nombre)   // listado: desde hoy (día y mes)
@@ -371,6 +378,11 @@ function pinta(){
       const c = document.createElement('div');
       c.className = 'cuerpo';
       rellena(c, p, true);
+      if (p.fb){
+        // la imagen (primer hijo de la ficha) abre el perfil o la web del evento
+        c.firstChild.style.cursor = 'pointer';
+        c.firstChild.onclick = () => window.open(p.fb, '_blank', 'noopener');
+      }
       div.appendChild(c);
     }
     return;

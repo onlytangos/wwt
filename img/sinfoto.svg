@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90">
+  <!-- imagen dummy para fichas sin foto (caras.htm); fondo transparente, lo pone el css -->
+  <g fill="none" stroke="#999" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+    <rect x="55" y="25" width="50" height="40" rx="4"/>
+    <circle cx="70" cy="38" r="5"/>
+    <path d="M57 62 L75 46 L86 56 L93 50 L103 62"/>
+  </g>
+</svg>
