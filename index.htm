@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WWT</title>
+<!-- Todo se lee en su sitio, como index.htm: data/roles.js, data/*People.out.js y data/publicEvent.out.js (los crea import.sh)
+     y las fotos de import/src.fb/ (fotos.js lo genera index.sh). -->
+<script src="data/roles.js"></script>
+<script src="data/publicPeople.out.js"></script>
+<script src="data/publicEvent.out.js"></script>
+<script src="fotos.js"></script>
+<style>
+  :root { color-scheme: dark;
+          --fondo: #222; --barra: #444; --tarjeta: #3a3a3a; --sinfoto: #474747;
+          --texto: #eee; --suave: #999; --enlace: #8ab4f8; --borde: #555; }
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: var(--fondo); color: var(--texto); }
+  a { color: var(--enlace); }
+  .cuerpo a { text-decoration: none; font-weight: 600; }   /* enlaces de la ficha: perfil, video... */
+  .cuerpo a:hover { color: var(--texto); }
+  .cuerpo p.enlaces { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; }
+  .cuerpo p.enlaces a { display: inline-flex; align-items: center; gap: 5px; }
+  .cuerpo .icono { height: 16px; width: auto; }
+  .filtros { display: flex; flex-wrap: wrap; gap: 12px; margin: -16px -16px 16px; padding: 12px 16px; align-items: center;
+             position: sticky; top: 0; z-index: 1; background: var(--barra); box-shadow: 0 1px 6px rgba(0,0,0,.6); }
+  select { font-size: 1em; padding: 4px 6px; background: var(--tarjeta); color: var(--texto); border: 1px solid var(--borde); border-radius: 4px; }
+  #total { color: var(--suave); }
+  #info { margin-left: auto; display: flex; }   /* a la derecha de la fila */
+  #info img { width: 22px; height: 22px; opacity: .8; }
+  #info:hover img { opacity: 1; }
+  .parrilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(75px, 1fr)); gap: 6px; align-items: stretch; }
+  .cara { position: relative; margin: 0; background: #000; display: flex; flex-direction: column;   /* negro bajo la foto y el nombre */
+           border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+  .cara img, .sinfoto { display: block; flex: none; width: 100%; aspect-ratio: 1; object-fit: contain; background: #000; }   /* foto entera sobre negro */
+  .sinfoto { display: flex; align-items: center; justify-content: center; background: var(--sinfoto); color: var(--suave); font-size: 1.3em; }
+  .cara.evt { grid-column: span 2; }   /* evento: portada (fotos2/) en dos columnas, 16:9 (como revisar), recortada al hueco */
+  .cara.evt img, .cara.evt .sinfoto { aspect-ratio: 16 / 9; object-fit: cover; }
+  /* ficha de evento: la portada tan alta como el texto de al lado (align-self: stretch) y el ancho
+     que da 16:9; recortada al hueco. Sin bajar de 90 px de alto ni pasar de la mitad de la ficha */
+  .cuerpo > img.portada { flex: none; align-self: stretch; width: auto; height: auto; min-height: 90px;
+                           max-width: 50%; aspect-ratio: 16 / 9; object-fit: cover; contain: size; }
+  .cara figcaption { flex: 1; padding: 3px; background: var(--barra); color: var(--texto); font-size: .7em;   /* todo el área bajo la foto */
+                     text-align: center; overflow-wrap: anywhere; }
+  .yt { position: absolute; top: 3px; right: 3px; display: flex; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+  .yt img { width: 20px; height: 14px; }
+  .cara img, .sinfoto { cursor: pointer; }
+  dialog { border: 1px solid var(--borde); border-radius: 8px; padding: 16px; width: min(520px, 90vw);
+           background: var(--barra); color: var(--texto); box-shadow: 0 4px 24px rgba(0,0,0,.8); }
+  dialog { margin-top: 56px; }   /* fichas arriba, bajo la barra */
+  dialog::backdrop { background: rgba(0,0,0,.7); }
+  .cuerpo { display: flex; gap: 14px; align-items: flex-start; }
+  /* ficha de persona: la foto, cuadrada, tan alta como la ficha (el texto de al lado); recortada al
+     hueco. Sin bajar de 90 px ni pasar de la mitad de la ficha */
+  .cuerpo > img, .cuerpo > .sinfoto { flex: none; align-self: stretch; width: auto; height: auto; min-height: 90px;
+                                        max-width: 50%; aspect-ratio: 1; object-fit: cover; border-radius: 6px;
+                                        contain: size; }   /* su tamaño no cuenta: el alto lo da el texto */
+  .cuerpo > img { background: #000; }
+  .texto { flex: 1; min-width: 0; }
+  dialog .texto { padding-right: 28px; }   /* sitio para la × de cerrar */
+  .cuerpo h2 { margin: 0 0 8px; font-size: 1.1em; }
+  .cuerpo p { margin: 6px 0; font-size: .9em; overflow-wrap: anywhere; }
+  /* listado: las mismas fichas, una debajo de otra */
+  .listado { display: flex; flex-direction: column; gap: 8px; max-width: 640px; }
+  .listado .cuerpo { padding: 12px; background: var(--barra); border: 1px solid var(--borde); border-radius: 8px; }
+  .listado .cuerpo > img, .listado .cuerpo > .sinfoto { aspect-ratio: 16 / 9; }   /* en el listado, todas 16:9 (también las de persona) */
+  .oculto { display: none; }
+  #fCerrar { position: absolute; top: 6px; right: 8px; border: 0; background: none; color: var(--suave); font-size: 1.3em; cursor: pointer; }
+  #fCerrar:hover { color: var(--texto); }
+</style>
+</head>
+<body>
+<div class="filtros">
+  <label>Área <select id="selArea" data-inicial="Asia"></select></label>
+  <label>Rol <select id="selRol" data-inicial="org"></select></label>
+  <label><input type="checkbox" id="chkListado"> listado</label>
+  <span id="total"></span>   <!-- total de la selección, con y sin foto (en los selectores, solo los que se listan: con foto) -->
+  <a id="info" href="#" title="info"><img src="img/info.svg" alt="info"></a>
+</div>
+<div id="parrilla" class="parrilla"></div>
+<div id="listado" class="listado oculto"></div>
+<dialog id="ficha"><button id="fCerrar" title="cerrar">&times;</button><div id="fCuerpo" class="cuerpo"></div></dialog>
+
+<script>
+const FOTOS = 'fotos/';
+const FOTOS2 = 'fotos2/';   // portadas: las de los eventos
+const TODOS = '*';
+const EVT = 'evt';                           // opción del selector de rol: eventos (publicEvent), no personas
+const $ = id => document.getElementById(id);
+
+function fbkey(u){
+  // clave de la foto de una url de FB (igual que fbkey de import/src.fb/fb.py y revisar.html e index.htm):
+  // perfil -> usuario o id; evento -> event_<id>; grupo -> group_<nombre>;
+  // publicacion de grupo -> post_<id>; '' si no identifica una pagina
+  u=String(u||'').trim();
+  const m=u.match(/[?&]id=(\d+)/); if (m) return m[1];
+  const p=u.replace(/^https?:\/\/([a-z]+\.)?facebook\.com\//,'').split('?')[0].split('#')[0].split('/').filter(x => x);
+  if (!p.length || ['share','photo','photo.php','watch','reel','story.php','permalink.php','dyi'].includes(p[0].toLowerCase())) return '';
+  let k=p[0];
+  const ids=p.slice(1).filter(x => /^\d+$/.test(x));
+  if (p[0]=='events') k='event_'+(ids.length ? ids[ids.length-1] : (p[1]||''));
+  else if (p[0]=='groups' && p.length>1) k=(p.length>2 && ['posts','permalink'].includes(p[2]) && ids.length) ? 'post_'+ids[ids.length-1] : 'group_'+p[1];
+  else if (p[0]=='pages' && p.length>1) k=ids.length ? ids[ids.length-1] : p[1];
+  return k.replace(/[^\w.-]/gu,'_').toLowerCase();
+}
+
+// Foto (ruta): perfil_<usuarioFB> y si no perfil_<nombre>, en jpg/webp/png (como index.htm)
+const fotoSet = new Set(typeof fotosPerfil == 'undefined' ? [] : fotosPerfil);
+const portadaSet = new Set(typeof fotosPortada == 'undefined' ? [] : fotosPortada);
+function foto(nombre, url){
+  const claves = [];
+  if (/facebook\.com\//.test(url || '')){ const k = fbkey(url); if (k) claves.push('perfil_' + k); }
+  claves.push('perfil_' + String(nombre).replace(/[^\p{L}\p{N}\-]/gu, '_'));
+  for (const k of claves) for (const e of ['jpg', 'webp', 'png']) if (fotoSet.has(k + '.' + e)) return FOTOS + encodeURIComponent(k + '.' + e);
+  return '';
+}
+// Portada (ruta) de un evento: portada_<fbkey> en fotos2/; si no hay, la foto
+// de perfil de su url (página o persona), como index.htm
+function portada(url){
+  const k = /facebook\.com\//.test(url || '') ? fbkey(url) : '';
+  if (k) for (const e of ['jpg', 'webp', 'png']) if (portadaSet.has('portada_' + k + '.' + e)) return FOTOS2 + encodeURIComponent('portada_' + k + '.' + e);
+  if (k) for (const e of ['jpg', 'webp', 'png']) if (fotoSet.has('perfil_' + k + '.' + e)) return FOTOS + encodeURIComponent('perfil_' + k + '.' + e);
+  return '';
+}
+
+// Filas: [area, pais, ciudad, roles, nombre, evento, notas/video, url].
+// Una persona por foto (o, sin foto, por url de perfil o por nombre): las filas
+// repetidas suman roles y completan área, vídeo y foto.
+let personas = [];
+function cargaFilas(filas){
+  const porClave = new Map();
+  for (const c of filas){
+    const f = foto(c[4], c[7]);
+    const url = c[7] && c[7] != '-' ? c[7] : '';
+    const clave = f || url || 'nombre:' + c[4];
+    const notas = String(c[6] || '').trim();
+    const coment = String(c[5] || '').trim();
+    const fb = /facebook\.com\//.test(url) ? url : '';
+    const area  = c[0] && c[0] != '-' ? c[0] : '-';
+    const lugar = [c[2], c[1]].filter(x => x && x != '-').join(', ');   // "ciudad, país" (para el listado)
+    const roles = String(c[3] || '').split(',').map(r => r.trim()).map(r => ROLES_EQUIVALENCIAS[r] || r).filter(r => ROLES[r]);
+    const video = (String(c[6] || '').match(/https?:\/\/[^\s,]*youtu[^\s,]*/) || [''])[0];
+    const p = porClave.get(clave);
+    if (!p){ porClave.set(clave, {area, lugar, roles, nombre: c[4], video, foto: f, fb, notas: notas && notas != '-' ? [notas] : [],
+                                     coment: coment && coment != '-' ? [coment] : []}); continue; }
+    if (!p.fb) p.fb = fb;
+    if (coment && coment != '-' && !p.coment.includes(coment)) p.coment.push(coment);
+    if (notas && notas != '-' && !p.notas.some(n => n.includes(notas))){
+      p.notas = p.notas.filter(n => !notas.includes(n));   // una nota contenida en otra no se repite
+      p.notas.push(notas);
+    }
+    if (p.area == '-') p.area = area;
+    if (!p.lugar) p.lugar = lugar;
+    if (!p.video) p.video = video;
+    for (const r of roles) if (!p.roles.includes(r)) p.roles.push(r);
+  }
+  personas = [...porClave.values(), ...eventos()];
+  pinta();
+}
+
+// Eventos (opción evt): las filas de publicEvent.out.js de tipo event*, una por
+// url (o nombre y fecha). Fecha EVT.<mes>.<MES>.<días>.<año> -> '4-8 FEB 2027'.
+function eventos(){
+  const porClave = new Map();
+  for (const e of (typeof publicEvent == 'undefined' ? [] : publicEvent)){
+    if (!String(e[3]).startsWith('event')) continue;
+    const url = /^https?:\/\//.test(e[7] || '') ? e[7] : '';
+    const clave = url || e[4] + '#' + e[6];
+    if (porClave.has(clave)) continue;
+    const f = String(e[6] || '').split('.');
+    const fecha = f[0] == 'EVT' ? [f[3], f[2], f[4]].filter(Boolean).join(' ') : '';
+    const orden = f[0] == 'EVT' ? (parseInt(f[4]) || 9999) * 100 + (parseInt(f[1]) || 0) : 999999;
+    const mes = f[0] == 'EVT' ? parseInt(f[1]) : NaN, dia = parseInt(f[3]) || 1;   // día sin fijar ('?'): el 1
+    const orgs = String(e[5] || '').split('#').pop().split(',').map(x => x.trim().match(/^org:\s*(.+)$/)).filter(Boolean).map(m => m[1]);
+    porClave.set(clave, {evento: true, area: e[0] && e[0] != '-' ? e[0] : '-', roles: [EVT], nombre: e[4], foto: portada(url),
+                         fb: url, tipo: String(e[3]).replace(/^event\s*/, '') || 'event',
+                         lugar: [e[2], e[1]].filter(x => x && x != '-').join(', '), fecha, orden, mes, dia, orgs,
+                         video: '', notas: [], coment: []});
+  }
+  return [...porClave.values()];
+}
+
+const enArea = (p, a) => a == TODOS || p.area == a;
+const enRol  = (p, r) => r == EVT ? !!p.evento : !p.evento && (r == TODOS || p.roles.includes(r));   // 'todos' = personas
+
+function opciones(sel, valores, etiqueta, cuenta){
+  // Rellena un selector con "etiqueta (n)"; conserva la opción elegida (al cargar, la de data-inicial).
+  const actual = sel.value || sel.dataset.inicial || TODOS;
+  sel.innerHTML = '';
+  for (const v of [TODOS, ...valores]){
+    const o = document.createElement('option');
+    o.value = v;
+    o.textContent = (v == TODOS ? 'todos' : etiqueta(v)) + ' (' + cuenta(v) + ')';
+    sel.appendChild(o);
+  }
+  sel.value = actual;
+}
+
+// nombre de persona -> eventos que organiza: en publicEvent.out.js el último
+// subcampo de varios (campo 6) lleva "org:<nombre>" separados por comas
+// (event lat#lon#dir#org:A,org:B; milonga local#org:A). url: campo 8, o '' sin enlace
+const organiza = new Map();
+for (const e of (typeof publicEvent == 'undefined' ? [] : publicEvent)){
+  if (e[3] == 'venue') continue;
+  const url = /^https?:\/\//.test(e[7] || '') ? e[7] : '';
+  for (const t of String(e[5] || '').split('#').pop().split(',')){
+    const m = t.trim().match(/^org:\s*(.+)$/);
+    if (!m) continue;
+    if (!organiza.has(m[1])) organiza.set(m[1], []);
+    if (!organiza.get(m[1]).some(x => x.nombre == e[4])) organiza.get(m[1]).push({nombre: e[4], url});
+  }
+}
+
+function enlace(href, texto, icono){
+  // enlace en pestaña nueva; con icono (img/...) delante del texto si se indica
+  const a = document.createElement('a');
+  a.href = href; a.textContent = texto; a.target = '_blank'; a.rel = 'noopener';
+  if (icono){
+    const img = document.createElement('img');
+    img.src = icono; img.alt = ''; img.className = 'icono';
+    a.prepend(img);
+  }
+  return a;
+}
+
+function cara(p){
+  // foto o, sin foto, recuadro gris con las iniciales
+  if (p.foto){
+    const img = document.createElement('img');
+    img.src = p.foto;
+    img.alt = p.nombre;
+    img.loading = 'lazy';
+    return img;
+  }
+  const sin = document.createElement('div');
+  sin.className = 'sinfoto';
+  sin.textContent = String(p.nombre).split(/\s+/).filter(Boolean).slice(0, 2).map(w => [...w][0]).join('').toUpperCase();
+  return sin;
+}
+
+function titulo(d, p, conLugar){
+  // h2 con el nombre; en el listado (conLugar), detrás " - ciudad, país"
+  const h = document.createElement('h2');
+  h.textContent = p.nombre + (conLugar && p.lugar ? ' - ' + p.lugar : '');
+  d.appendChild(h);
+}
+
+function rellenaEvento(c, p, conLugar){
+  // Ficha de evento en el contenedor c: portada a la izquierda; nombre, lugar, fechas, quién lo
+  // organiza y el enlace, que lleva de texto el tipo (festival, marathon...)
+  const img = cara(p);
+  if (p.foto) img.className = 'portada';
+  c.appendChild(img);
+  const d = document.createElement('div');
+  d.className = 'texto';
+  c.appendChild(d);
+  titulo(d, p, conLugar);
+  for (const texto of [conLugar ? '' : p.lugar, p.fecha, p.orgs.length ? 'org: ' + p.orgs.join(', ') : '']){
+    if (!texto) continue;
+    const par = document.createElement('p');
+    par.textContent = texto;
+    d.appendChild(par);
+  }
+  if (p.fb){
+    const par = document.createElement('p');
+    par.className = 'enlaces';
+    par.appendChild(enlace(p.fb, p.tipo, /facebook\.com\//.test(p.fb) ? 'img/perfil.svg' : ''));
+    d.appendChild(par);
+  }
+}
+
+function rellenaPersona(c, p, conLugar){
+  // Ficha en el contenedor c: foto a la izquierda; a la derecha nombre, campo 6, notas (urls tal cual) y una línea con los enlaces «video» (YouTube) y «perfil» (FB), con icono
+  c.appendChild(cara(p));
+  const d = document.createElement('div');
+  d.className = 'texto';
+  c.appendChild(d);
+  titulo(d, p, conLugar);
+  const eventos = organiza.get(p.nombre) || [];
+  if (eventos.length){
+    // eventos que organiza (con enlace si el evento tiene url)
+    const par = document.createElement('p');
+    par.appendChild(document.createTextNode('org: '));
+    eventos.forEach((ev, i) => {
+      if (i) par.appendChild(document.createTextNode(', '));
+      par.appendChild(ev.url ? enlace(ev.url, ev.nombre) : document.createTextNode(ev.nombre));
+    });
+    d.appendChild(par);
+  }
+  for (const n of p.coment){
+    // campo 6: texto libre (escuela, milonga...)
+    const par = document.createElement('p');
+    par.textContent = n;
+    d.appendChild(par);
+  }
+  // comentarios (campo 7), detrás de org: en una sola línea, los trozos
+  // separados por comas. Se corta por " / " (texto del perfil de FB) y por ","
+  // sin espacio detrás (los escritos a mano: url,texto). Las urls no salen
+  // aquí: van a la línea de enlaces
+  const urls = [], textos = [];
+  for (const n of p.notas) for (const linea of n.split(/\s+\/\s+|,(?!\s)/)){
+    let texto = '';
+    for (const trozo of linea.split(/(https?:\/\/[^\s,]+)/)){
+      if (/^https?:\/\//.test(trozo)){ if (!urls.includes(trozo)) urls.push(trozo); }
+      else texto += trozo;
+    }
+    texto = texto.replace(/^[\s,]+|[\s,]+$/g, '');
+    if (texto && !textos.includes(texto)) textos.push(texto);
+  }
+  if (textos.length){
+    const par = document.createElement('p');
+    par.textContent = 'info: ' + textos.join(', ');
+    d.appendChild(par);
+  }
+  // video, otras webs (por su dominio) y perfil en la misma línea
+  const enlaces = [...urls.filter(u => /youtu/.test(u)).map(v => enlace(v, 'video', 'img/yt.svg')),
+                   ...urls.filter(u => !/youtu/.test(u)).map(u => enlace(u, u.replace(/^https?:\/\/(www\.)?/, '').split('/')[0])),
+                   ...(p.fb ? [enlace(p.fb, 'perfil', 'img/perfil.svg')] : [])];
+  if (enlaces.length){
+    const par = document.createElement('p');
+    par.className = 'enlaces';
+    for (const e of enlaces) par.appendChild(e);
+    d.appendChild(par);
+  }
+}
+
+function rellena(c, p, conLugar){ (p.evento ? rellenaEvento : rellenaPersona)(c, p, conLugar); }
+
+function abreFicha(p){
+  // la ficha en el diálogo
+  $('fCuerpo').innerHTML = '';
+  rellena($('fCuerpo'), p);
+  $('ficha').showModal();
+}
+
+// días desde hoy hasta el día y mes del evento, sin contar el año (lo de antes
+// de hoy va al final, como del año que viene); sin fecha, al final del todo
+function desdeHoy(p){
+  if (isNaN(p.mes)) return 9999;
+  const hoy = new Date(), n = (m, d) => m * 31 + d;
+  return (n(p.mes, p.dia) - n(hoy.getMonth(), hoy.getDate()) + 372) % 372;
+}
+
+function pinta(){
+  const val = sel => sel.value || sel.dataset.inicial || TODOS;   // al cargar aún no hay opciones: vale data-inicial
+  const a = val($('selArea')), r = val($('selRol'));
+  // Solo se listan los que tienen foto. Cada selector cuenta los que se listan
+  // según lo elegido en el otro; detrás, el total de la selección (con y sin foto)
+  const conFoto = personas.filter(p => p.foto);
+  const areas = [...new Set(personas.map(p => p.area))].sort((x, y) => (x == '-') - (y == '-') || x.localeCompare(y));
+  opciones($('selArea'), areas, v => v == '-' ? 'sin área' : v,
+           v => conFoto.filter(p => enArea(p, v) && enRol(p, r)).length);
+  // tras 'todos': events, organizer, artist; después el resto de roles
+  const PRIMEROS = {[EVT]: 'events', org: 'organizer', art: 'artist'};
+  opciones($('selRol'), [...Object.keys(PRIMEROS), ...Object.keys(ROLES).filter(v => !(v in PRIMEROS))],
+           v => PRIMEROS[v] || ROLES[v].nombre || v,
+           v => conFoto.filter(p => enArea(p, a) && enRol(p, v)).length);
+  $('total').textContent = 'total ' + personas.filter(p => enArea(p, a) && enRol(p, r)).length;
+
+  const enListado = $('chkListado').checked;
+  const lista = conFoto.filter(p => enArea(p, a) && enRol(p, r))
+                        .sort((x, y) => r != EVT ? x.nombre.localeCompare(y.nombre)
+                                      : enListado ? desdeHoy(x) - desdeHoy(y) || x.nombre.localeCompare(y.nombre)   // listado: desde hoy (día y mes)
+                                      : x.orden - y.orden || x.nombre.localeCompare(y.nombre));                     // parrilla: por fecha
+  $('parrilla').classList.toggle('oculto', enListado);
+  $('listado').classList.toggle('oculto', !enListado);
+  if (enListado){
+    // listado: las mismas fichas que el diálogo, una debajo de otra
+    const div = $('listado');
+    div.innerHTML = '';
+    for (const p of lista){
+      const c = document.createElement('div');
+      c.className = 'cuerpo';
+      rellena(c, p, true);
+      div.appendChild(c);
+    }
+    return;
+  }
+  const div = $('parrilla');
+  div.innerHTML = '';
+  for (const p of lista){
+    const fig = document.createElement('figure');
+    fig.className = p.evento ? 'cara evt' : 'cara';
+    const img = cara(p);
+    img.onclick = () => abreFicha(p);
+    fig.appendChild(img);
+    if (p.video){
+      const yt = document.createElement('a');
+      yt.className = 'yt';
+      yt.href = p.video;
+      yt.target = '_blank';
+      yt.rel = 'noopener';
+      yt.title = 'vídeo en YouTube';
+      yt.innerHTML = '<img src="img/yt.svg" alt="YouTube">';
+      fig.appendChild(yt);
+    }
+    const pie = document.createElement('figcaption');
+    pie.textContent = p.nombre;
+    fig.appendChild(pie);
+    div.appendChild(fig);
+  }
+}
+
+$('info').onclick = () => {
+  // ficha de info: solo texto
+  $('fCuerpo').innerHTML = '';
+  const d = document.createElement('div');
+  d.className = 'texto';
+  d.innerHTML = '<p>by KokoTango</p><p>public version</p>';
+  $('fCuerpo').appendChild(d);
+  $('ficha').showModal();
+  return false;
+};
+$('fCerrar').onclick = () => $('ficha').close();
+$('ficha').onclick = e => { if (e.target == $('ficha')) $('ficha').close(); };   // click fuera: se cierra
+$('selArea').onchange = pinta;
+$('selRol').onchange = pinta;
+$('chkListado').onchange = pinta;
+// privatePeople.out.js es solo local: si falta, salen solo las públicas
+cargaFilas([...(typeof publicPeople == 'undefined' ? [] : publicPeople),
+            ...(typeof privatePeople == 'undefined' ? [] : privatePeople)]);
+</script>
+</body>
+</html>
