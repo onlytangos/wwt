@@ -25,7 +25,18 @@
              position: sticky; top: 0; z-index: 1; background: var(--barra); box-shadow: 0 1px 6px rgba(0,0,0,.6); }
   select { font-size: 1em; padding: 4px 6px; background: var(--tarjeta); color: var(--texto); border: 1px solid var(--borde); border-radius: 4px; }
   #total { color: var(--suave); }
-  #info { margin-left: auto; display: flex; }   /* a la derecha de la fila */
+  #buscar { margin-left: auto; font-size: 1em; padding: 4px 6px; width: 14em; max-width: 45vw;   /* buscador, a la derecha, junto a info */
+             background: var(--tarjeta); color: var(--texto); border: 1px solid var(--borde); border-radius: 4px; }
+  #info { display: flex; }
+  .cuerpo.encontrado { outline: 2px solid var(--enlace); }   /* ficha buscada, en el listado */
+  .busca { position: relative; margin-left: auto; }
+  .busca #buscar { margin-left: 0; }
+  #sugs { position: absolute; right: 0; top: 100%; margin-top: 4px; width: min(28em, 90vw); z-index: 2;   /* hasta 10 sugerencias */
+          background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,.6);
+          max-height: calc(10 * 26px); overflow-y: auto; }   /* 10 líneas a la vista; el resto, desplazando */
+  #sugs div { height: 26px; line-height: 26px; padding: 0 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #sugs div.activa, #sugs div:hover { background: var(--barra); }
+  #sugs small { color: var(--suave); }
   #info img { width: 22px; height: 22px; opacity: .8; }
   #info:hover img { opacity: 1; }
   .parrilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(75px, 1fr)); gap: 6px; align-items: stretch; }
@@ -70,15 +81,16 @@
 </head>
 <body>
 <div class="filtros">
-  <label>Área <select id="selArea" data-inicial="Asia"></select></label>
-  <label>Rol <select id="selRol" data-inicial="org"></select></label>
-  <label><input type="checkbox" id="chkListado"> listado</label>
+  <label><select id="selArea" data-inicial="Asia"></select></label>
+  <label><select id="selRol" data-inicial="org"></select></label>
+  <label><input type="checkbox" id="chkListado"> list</label>
   <span id="total"></span>   <!-- total de la selección, con y sin foto (en los selectores, solo los que se listan: con foto) -->
+  <span class="busca"><input id="buscar" type="search" placeholder="search" autocomplete="off"><div id="sugs" class="oculto"></div></span>
   <a id="info" href="#" title="info"><img src="img/info.svg" alt="info"></a>
 </div>
 <div id="parrilla" class="parrilla"></div>
 <div id="listado" class="listado oculto"></div>
-<dialog id="ficha"><button id="fCerrar" title="cerrar">&times;</button><div id="fCuerpo" class="cuerpo"></div></dialog>
+<dialog id="ficha"><button id="fCerrar" title="close">&times;</button><div id="fCuerpo" class="cuerpo"></div></dialog>
 
 <script>
 const FOTOS = 'fotos/';
@@ -87,6 +99,7 @@ const TODOS = '*';
 const EVT = 'evt';                           // opción del selector de rol: eventos (publicEvent), no personas
 const SEM = 'sem';                           // opción del selector de rol: seminarios (eventos de tipo seminar), aparte de evt
 const deEventos = r => r == EVT || r == SEM;  // opciones del selector que son eventos
+const PEO = 'peo';                           // opción del selector de rol: todas las personas (sin eventos)
 const $ = id => document.getElementById(id);
 
 function fbkey(u){
@@ -166,6 +179,8 @@ function cargaFilas(filas){
     for (const r of roles) if (!p.roles.includes(r)) p.roles.push(r);
   }
   personas = [...porClave.values(), ...eventos()];
+  personas.forEach((p, i) => p.id = i);
+  sugerencias();
   pinta();
 }
 
@@ -216,17 +231,29 @@ function eventos(){
 }
 
 const enArea = (p, a) => a == TODOS || p.area == a;
-const enRol  = (p, r) => deEventos(r) ? !!p.evento && p.roles.includes(r) : !p.evento && (r == TODOS || p.roles.includes(r));   // 'todos' = personas
+const enRol  = (p, r) => r == TODOS ? true                                 // 'all': personas y eventos
+                       : r == PEO ? !p.evento                             // 'people': todas las personas
+                       : deEventos(r) ? !!p.evento && p.roles.includes(r)
+                       : !p.evento && p.roles.includes(r);
 
 function opciones(sel, valores, etiqueta, cuenta){
   // Rellena un selector con "etiqueta (n)"; conserva la opción elegida (al cargar, la de data-inicial).
   const actual = sel.value || sel.dataset.inicial || TODOS;
   sel.innerHTML = '';
-  for (const v of [TODOS, ...valores]){
+  // valores: lista de valores o de grupos {grupo, valores} (cada grupo, en su <optgroup>)
+  const opcion = (dentro, v) => {
     const o = document.createElement('option');
     o.value = v;
-    o.textContent = (v == TODOS ? 'todos' : etiqueta(v)) + ' (' + cuenta(v) + ')';
-    sel.appendChild(o);
+    o.textContent = (v == TODOS ? 'all' : etiqueta(v)) + ' (' + cuenta(v) + ')';
+    dentro.appendChild(o);
+  };
+  opcion(sel, TODOS);
+  for (const v of valores){
+    if (typeof v != 'object'){ opcion(sel, v); continue; }
+    const g = document.createElement('optgroup');
+    g.label = v.grupo;
+    for (const w of v.valores) opcion(g, w);
+    sel.appendChild(g);
   }
   sel.value = actual;
 }
@@ -355,7 +382,7 @@ function rellenaPersona(c, p, conLugar){
   }
   // video, otras webs (por su dominio) y perfil en la misma línea
   const enlaces = [...urls.filter(u => /youtu/.test(u)).map(v => enlace(v, 'video', 'img/yt.svg')),
-                   ...urls.filter(u => !/youtu/.test(u)).map(u => enlace(u, u.replace(/^https?:\/\/(www\.)?/, '').split('/')[0])),
+                   ...urls.filter(u => !/youtu/.test(u)).map(u => enlace(u, u.replace(/^https?:\/\/(www\.)?/, '').split('/')[0], 'img/web.svg')),
                    ...(p.fb ? [enlace(p.fb, 'perfil', 'img/perfil.svg')] : [])];
   if (enlaces.length){
     const par = document.createElement('p');
@@ -386,21 +413,23 @@ function pinta(){
   const val = sel => sel.value || sel.dataset.inicial || TODOS;   // al cargar aún no hay opciones: vale data-inicial
   const a = val($('selArea')), r = val($('selRol'));
   // Solo se listan los que tienen foto, salvo los eventos en el listado (todos).
-  // Cada selector cuenta los que se listan según lo elegido en el otro; detrás,
-  // el total de la selección (con y sin foto)
+  // Cada selector cuenta (entre paréntesis) siempre los que tienen foto, según lo
+  // elegido en el otro; detrás, el total de la selección (con y sin foto)
   const enListado = $('chkListado').checked;
-  const conFoto = personas.filter(p => p.foto || (enListado && p.evento));
+  const conFoto = personas.filter(p => p.foto);
+  const visibles = personas.filter(p => p.foto || (enListado && p.evento) || p === buscado);   // la buscada, aunque no tenga foto
   const areas = [...new Set(personas.map(p => p.area))].sort((x, y) => (x == '-') - (y == '-') || x.localeCompare(y));
-  opciones($('selArea'), areas, v => v == '-' ? 'sin área' : v,
+  opciones($('selArea'), areas, v => v == '-' ? 'no area' : v,
            v => conFoto.filter(p => enArea(p, v) && enRol(p, r)).length);
-  // tras 'todos': events, seminars, organizer, artist; después el resto de roles
-  const PRIMEROS = {[EVT]: 'events', [SEM]: 'seminars', org: 'organizer', art: 'artist'};
-  opciones($('selRol'), [...Object.keys(PRIMEROS), ...Object.keys(ROLES).filter(v => !(v in PRIMEROS))],
+  // tras 'all', dos grupos: events (events, seminars) y people (people, organizer, artist y el resto de roles)
+  const PRIMEROS = {[EVT]: 'events', [SEM]: 'seminars', [PEO]: 'people', org: 'organizer', art: 'artist'};
+  opciones($('selRol'), [{grupo: 'events', valores: [EVT, SEM]},
+                         {grupo: 'people', valores: [PEO, 'org', 'art', ...Object.keys(ROLES).filter(v => !(v in PRIMEROS))]}],
            v => PRIMEROS[v] || ROLES[v].nombre || v,
            v => conFoto.filter(p => enArea(p, a) && enRol(p, v)).length);
-  $('total').textContent = 'total ' + personas.filter(p => enArea(p, a) && enRol(p, r)).length;
+  $('total').textContent = '(' + personas.filter(p => enArea(p, a) && enRol(p, r)).length + ')';
 
-  const lista = conFoto.filter(p => enArea(p, a) && enRol(p, r))
+  const lista = visibles.filter(p => enArea(p, a) && enRol(p, r))
                         .sort((x, y) => !deEventos(r) ? x.nombre.localeCompare(y.nombre)
                                       : enListado ? desdeHoy(x) - desdeHoy(y) || x.nombre.localeCompare(y.nombre)   // listado: desde hoy (día y mes)
                                       : x.orden - y.orden || x.nombre.localeCompare(y.nombre));                     // parrilla: por fecha
@@ -413,6 +442,7 @@ function pinta(){
     for (const p of lista){
       const c = document.createElement('div');
       c.className = 'cuerpo';
+      c.id = 'f' + p.id;   // para ir a ella desde el buscador
       rellena(c, p, true);
       if (p.fb){
         // la imagen (primer hijo de la ficha) abre el perfil o la web del evento
@@ -437,7 +467,7 @@ function pinta(){
       yt.href = p.video;
       yt.target = '_blank';
       yt.rel = 'noopener';
-      yt.title = 'vídeo en YouTube';
+      yt.title = 'video on YouTube';
       yt.innerHTML = '<img src="img/yt.svg" alt="YouTube">';
       fig.appendChild(yt);
     }
@@ -448,6 +478,65 @@ function pinta(){
   }
 }
 
+// Buscador: al escribir, sugerencias en una lista de 10 líneas (eventos y personas cuyo nombre
+// contiene lo escrito; primero las que empiezan así). Al elegir una, el listado
+// de su tipo (events/seminars o people) en su área, y la ficha a la vista
+let buscado = null, encontradas = [], activa = -1;
+const MAX_SUGS = 50;          // coincidencias como mucho (se ven 10, el resto desplazando)
+const detalle = p => p.evento ? [p.fecha, p.lugar].filter(Boolean).join(' ') || p.tipo : p.lugar || 'people';
+const normaliza = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+function sugerencias(){ personas.forEach(p => p.clave = normaliza(p.nombre)); }
+function muestra(){
+  const q = normaliza($('buscar').value.trim()), d = $('sugs');
+  encontradas = !q ? [] : personas.filter(p => p.clave.includes(q))
+    .sort((x, y) => x.clave.startsWith(q) == y.clave.startsWith(q) ? x.nombre.localeCompare(y.nombre) : x.clave.startsWith(q) ? -1 : 1)
+    .slice(0, MAX_SUGS);
+  activa = encontradas.length ? 0 : -1;
+  d.innerHTML = '';
+  encontradas.forEach((p, i) => {
+    const o = document.createElement('div');
+    o.innerHTML = '';
+    o.append(p.nombre + ' ');
+    const s = document.createElement('small');
+    s.textContent = '— ' + detalle(p);
+    o.appendChild(s);
+    if (i == activa) o.className = 'activa';
+    o.onmousedown = e => { e.preventDefault(); ir(p); };   // antes de que el input pierda el foco
+    d.appendChild(o);
+  });
+  d.classList.toggle('oculto', !encontradas.length);
+}
+function marca(i){
+  activa = (i + encontradas.length) % encontradas.length;
+  [...$('sugs').children].forEach((o, k) => o.classList.toggle('activa', k == activa));
+  $('sugs').children[activa].scrollIntoView({block: 'nearest'});   // la marcada, siempre a la vista
+}
+function ir(p){
+  buscado = p;
+  $('chkListado').checked = true;
+  $('selRol').value = p.evento ? p.roles[0] : PEO;
+  $('selArea').value = p.area;
+  pinta();
+  const c = document.getElementById('f' + p.id);
+  if (c){
+    c.classList.add('encontrado');
+    c.scrollIntoView({block: 'center'});
+  }
+  $('buscar').value = '';
+  $('sugs').classList.add('oculto');
+  $('buscar').blur();
+}
+$('buscar').oninput = muestra;
+$('buscar').onfocus = muestra;
+$('buscar').onblur = () => $('sugs').classList.add('oculto');
+$('buscar').onkeydown = e => {
+  if (!encontradas.length) return;
+  if (e.key == 'ArrowDown'){ marca(activa + 1); e.preventDefault(); }
+  else if (e.key == 'ArrowUp'){ marca(activa - 1); e.preventDefault(); }
+  else if (e.key == 'Enter') ir(encontradas[activa]);
+  else if (e.key == 'Escape') $('sugs').classList.add('oculto');
+};
+
 $('info').onclick = () => {
   // ficha de info: solo texto
   $('fCuerpo').innerHTML = '';
@@ -456,7 +545,7 @@ $('info').onclick = () => {
   // perfil de FB de KoKoTango: enlace y, en la última línea, invitación a mandar urls
   const FB = 'https://www.facebook.com/profile.php?id=100093497583670';
   d.innerHTML = '<p><a href="' + FB + '" target="_blank" rel="noopener">by KoKoTango</a></p><p>public version</p>' +
-                '<p><a href="' + FB + '" target="_blank" rel="noopener">envía un mensaje con tus urls</a></p>';
+                '<p><a href="' + FB + '" target="_blank" rel="noopener">send me a message with your urls</a></p>';
   $('fCuerpo').appendChild(d);
   $('ficha').showModal();
   return false;
