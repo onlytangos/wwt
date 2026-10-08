@@ -25,13 +25,13 @@
              position: sticky; top: 0; z-index: 1; background: var(--barra); box-shadow: 0 1px 6px rgba(0,0,0,.6); }
   select { font-size: 1em; padding: 4px 6px; background: var(--tarjeta); color: var(--texto); border: 1px solid var(--borde); border-radius: 4px; }
   #total { color: var(--suave); }
-  #buscar { margin-left: auto; font-size: 1em; padding: 4px 6px; width: 14em; max-width: 45vw;   /* buscador, a la derecha, junto a info */
+  .junto { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }   /* list y (total): no se separan al saltar de línea */
+  #buscar { font-size: 1em; padding: 4px 6px; width: 7em; max-width: 22vw;   /* buscador */
              background: var(--tarjeta); color: var(--texto); border: 1px solid var(--borde); border-radius: 4px; }
   #info { display: flex; }
   .cuerpo.encontrado { outline: 2px solid var(--enlace); }   /* ficha buscada, en el listado */
-  .busca { position: relative; margin-left: auto; }
-  .busca #buscar { margin-left: 0; }
-  #sugs { position: absolute; right: 0; top: 100%; margin-top: 4px; width: min(28em, 90vw); z-index: 2;   /* hasta 10 sugerencias */
+  .busca { position: relative; }   /* buscador, tras el icono KK */
+  #sugs { position: absolute; left: 0; top: 100%; margin-top: 4px; width: min(28em, 90vw); z-index: 2;   /* hasta 10 sugerencias */
           background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,.6);
           max-height: calc(10 * 26px); overflow-y: auto; }   /* 10 líneas a la vista; el resto, desplazando */
   #sugs div { height: 26px; line-height: 26px; padding: 0 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -81,12 +81,15 @@
 </head>
 <body>
 <div class="filtros">
-  <label><select id="selArea" data-inicial="Asia"></select></label>
-  <label><select id="selRol" data-inicial="org"></select></label>
-  <label><input type="checkbox" id="chkListado"> list</label>
-  <span id="total"></span>   <!-- total de la selección, con y sin foto (en los selectores, solo los que se listan: con foto) -->
+  <a id="info" href="#" title="KoKo Tango"><img src="img/koko.svg" alt="KoKo Tango"></a>
   <span class="busca"><input id="buscar" type="search" placeholder="search" autocomplete="off"><div id="sugs" class="oculto"></div></span>
-  <a id="info" href="#" title="info"><img src="img/info.svg" alt="info"></a>
+  <label><select id="selArea" data-inicial="Asia"></select></label>
+  <label><select id="selPais"></select></label>   <!-- países del área elegida -->
+  <label><select id="selRol" data-inicial="org"></select></label>
+  <span class="junto">
+    <label><input type="checkbox" id="chkListado"> list</label>
+    <span id="total"></span>   <!-- total de la selección, con y sin foto (en los selectores, solo los que se listan: con foto) -->
+  </span>
 </div>
 <div id="parrilla" class="parrilla"></div>
 <div id="listado" class="listado oculto"></div>
@@ -100,6 +103,8 @@ const EVT = 'evt';                           // opción del selector de rol: eve
 const SEM = 'sem';                           // opción del selector de rol: seminarios (eventos de tipo seminar), aparte de evt
 const deEventos = r => r == EVT || r == SEM;  // opciones del selector que son eventos
 const PEO = 'peo';                           // opción del selector de rol: todas las personas (sin eventos)
+const LIS = 'lis';                           // opción del selector de rol: list (fuentes de información, tipo list de publicEvent)
+const MUNDIAL = 'all';                       // área de las list mundiales: salen en todas las áreas
 const $ = id => document.getElementById(id);
 
 function fbkey(u){
@@ -161,11 +166,12 @@ function cargaFilas(filas){
     const coment = String(c[5] || '').trim();
     const fb = /facebook\.com\//.test(url) ? url : '';
     const area  = c[0] && c[0] != '-' ? c[0] : '-';
+    const pais  = c[1] && c[1] != '-' ? c[1] : '-';
     const lugar = [c[2], c[1]].filter(x => x && x != '-').join(', ');   // "ciudad, país" (para el listado)
     const roles = String(c[3] || '').split(',').map(r => r.trim()).map(r => ROLES_EQUIVALENCIAS[r] || r).filter(r => ROLES[r]);
     const video = (String(c[6] || '').match(/https?:\/\/[^\s,]*youtu[^\s,]*/) || [''])[0];
     const p = porClave.get(clave);
-    if (!p){ porClave.set(clave, {area, lugar, roles, nombre: c[4], video, foto: f, fb, notas: notas && notas != '-' ? [notas] : [],
+    if (!p){ porClave.set(clave, {area, pais, lugar, roles, nombre: c[4], video, foto: f, fb, notas: notas && notas != '-' ? [notas] : [],
                                      coment: coment && coment != '-' ? [coment] : []}); continue; }
     if (!p.fb) p.fb = fb;
     if (coment && coment != '-' && !p.coment.includes(coment)) p.coment.push(coment);
@@ -174,11 +180,12 @@ function cargaFilas(filas){
       p.notas.push(notas);
     }
     if (p.area == '-') p.area = area;
+    if (p.pais == '-') p.pais = pais;
     if (!p.lugar) p.lugar = lugar;
     if (!p.video) p.video = video;
     for (const r of roles) if (!p.roles.includes(r)) p.roles.push(r);
   }
-  personas = [...porClave.values(), ...eventos()];
+  personas = [...porClave.values(), ...eventos(), ...listas()];
   personas.forEach((p, i) => p.id = i);
   sugerencias();
   pinta();
@@ -220,7 +227,7 @@ function eventos(){
     const orden = f[0] == 'EVT' ? (parseInt(f[4]) || 9999) * 100 + (parseInt(f[1]) || 0) : 999999;
     const mes = f[0] == 'EVT' ? parseInt(f[1]) : NaN, dia = parseInt(f[3]) || 1;   // día sin fijar ('?'): el 1
     const orgs = String(e[5] || '').split('#').pop().split(',').map(x => x.trim().match(/^org:\s*(.+)$/)).filter(Boolean).map(m => m[1]);
-    const ev = {evento: true, area: e[0] && e[0] != '-' ? e[0] : '-', roles: [String(e[3]).indexOf('seminar') != -1 ? SEM : EVT], nombre: e[4], foto: portada(url),
+    const ev = {evento: true, area: e[0] && e[0] != '-' ? e[0] : '-', pais: e[1] && e[1] != '-' ? e[1] : '-', roles: [String(e[3]).indexOf('seminar') != -1 ? SEM : EVT], nombre: e[4], foto: portada(url),
                          fb: url, tipo: String(e[3]).replace(/^event\s*/, '') || 'event',
                          lugar: [e[2], e[1]].filter(x => x && x != '-').join(', '), fecha, orden, mes, dia, orgs,
                          video: '', notas: [], coment: []};
@@ -230,8 +237,20 @@ function eventos(){
   return lista;
 }
 
-const enArea = (p, a) => a == TODOS || p.area == a;
-const enRol  = (p, r) => r == TODOS ? true                                 // 'all': personas y eventos
+// List (opción list): las filas de publicEvent.out.js de tipo list; solo nombre y url
+function listas(){
+  return (typeof publicEvent == 'undefined' ? [] : publicEvent).filter(e => e[3] == 'list').map(e => ({
+    lista: true, area: e[0] && e[0] != '-' ? e[0] : '-', pais: e[1] && e[1] != '-' ? e[1] : '-', roles: [LIS], nombre: e[4],
+    fb: /^https?:\/\//.test(e[7] || '') ? e[7] : '', lugar: [e[2], e[1]].filter(x => x && x != '-').join(', '),
+    foto: '', video: '', notas: [], coment: []}));
+}
+
+const enArea = (p, a) => a == TODOS || p.area == a || p.area == MUNDIAL;
+// país: las list sin país (de un área o mundiales) salen en todos los países
+const enPais = (p, pa) => pa == TODOS || p.pais == pa || (p.lista && p.pais == '-');
+const enRol  = (p, r) => r == LIS ? !!p.lista                             // 'list': solo las list
+                       : p.lista ? false                                  // las list no salen en las demás
+                       : r == TODOS ? true                                 // 'all': personas y eventos
                        : r == PEO ? !p.evento                             // 'people': todas las personas
                        : deEventos(r) ? !!p.evento && p.roles.includes(r)
                        : !p.evento && p.roles.includes(r);
@@ -256,6 +275,7 @@ function opciones(sel, valores, etiqueta, cuenta){
     sel.appendChild(g);
   }
   sel.value = actual;
+  if (sel.selectedIndex < 0) sel.value = TODOS;   // la elegida ya no está (otra área): all
 }
 
 // nombre de persona -> eventos que organiza: en publicEvent.out.js el último
@@ -392,7 +412,20 @@ function rellenaPersona(c, p, conLugar){
   }
 }
 
-function rellena(c, p, conLugar){ (p.evento ? rellenaEvento : rellenaPersona)(c, p, conLugar); }
+function rellenaLista(c, p){
+  // list: solo el nombre y la url (de texto, la url sin http ni www)
+  const d = document.createElement('div');
+  d.className = 'texto';
+  c.appendChild(d);
+  titulo(d, p);
+  if (!p.fb) return;
+  const par = document.createElement('p');
+  par.className = 'enlaces';
+  par.appendChild(enlace(p.fb, p.fb.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''), 'img/web.svg'));
+  d.appendChild(par);
+}
+
+function rellena(c, p, conLugar){ (p.lista ? rellenaLista : p.evento ? rellenaEvento : rellenaPersona)(c, p, conLugar); }
 
 function abreFicha(p){
   // la ficha en el diálogo
@@ -412,24 +445,33 @@ function desdeHoy(p){
 function pinta(){
   const val = sel => sel.value || sel.dataset.inicial || TODOS;   // al cargar aún no hay opciones: vale data-inicial
   const a = val($('selArea')), r = val($('selRol'));
+  let pa = val($('selPais'));
   // Solo se listan los que tienen foto, salvo los eventos en el listado (todos).
   // Cada selector cuenta (entre paréntesis) siempre los que tienen foto, según lo
   // elegido en el otro; detrás, el total de la selección (con y sin foto)
-  const enListado = $('chkListado').checked;
-  const conFoto = personas.filter(p => p.foto);
-  const visibles = personas.filter(p => p.foto || (enListado && p.evento) || p === buscado);   // la buscada, aunque no tenga foto
-  const areas = [...new Set(personas.map(p => p.area))].sort((x, y) => (x == '-') - (y == '-') || x.localeCompare(y));
+  // Las list no tienen foto: cuentan todas y salen siempre en el listado
+  const enListado = $('chkListado').checked || r == LIS;
+  const conFoto = personas.filter(p => p.foto || p.lista);
+  const visibles = personas.filter(p => p.foto || p.lista || (enListado && p.evento) || p === buscado);   // la buscada, aunque no tenga foto
+  const areas = [...new Set(personas.map(p => p.area))].filter(x => x != MUNDIAL)
+                  .sort((x, y) => (x == '-') - (y == '-') || x.localeCompare(y));
   opciones($('selArea'), areas, v => v == '-' ? 'no area' : v,
            v => conFoto.filter(p => enArea(p, v) && enRol(p, r)).length);
-  // tras 'all', dos grupos: events (events, seminars) y people (people, organizer, artist y el resto de roles)
-  const PRIMEROS = {[EVT]: 'events', [SEM]: 'seminars', [PEO]: 'people', org: 'organizer', art: 'artist'};
-  opciones($('selRol'), [{grupo: 'events', valores: [EVT, SEM]},
+  // países del área elegida (dinámico: cambia con el área)
+  const paises = [...new Set(personas.filter(p => enArea(p, a) && p.pais != '-').map(p => p.pais))].sort((x, y) => x.localeCompare(y));
+  opciones($('selPais'), paises, v => v,
+           v => conFoto.filter(p => enArea(p, a) && enPais(p, v) && enRol(p, r)).length);
+  pa = $('selPais').value;   // si el país no es de esta área, opciones lo ha dejado en all
+  // tras 'all', list y dos grupos: events (events, seminars) y people (people, organizer, artist y el resto de roles)
+  const PRIMEROS = {[LIS]: 'list', [EVT]: 'events', [SEM]: 'seminars', [PEO]: 'people', org: 'organizer', art: 'artist'};
+  opciones($('selRol'), [LIS, {grupo: 'events', valores: [EVT, SEM]},
                          {grupo: 'people', valores: [PEO, 'org', 'art', ...Object.keys(ROLES).filter(v => !(v in PRIMEROS))]}],
            v => PRIMEROS[v] || ROLES[v].nombre || v,
-           v => conFoto.filter(p => enArea(p, a) && enRol(p, v)).length);
-  $('total').textContent = '(' + personas.filter(p => enArea(p, a) && enRol(p, r)).length + ')';
+           v => conFoto.filter(p => enArea(p, a) && enPais(p, pa) && enRol(p, v)).length);
+  anchoBuscar();   // el selector de área cambia de ancho con sus opciones
+  $('total').textContent = '(' + personas.filter(p => enArea(p, a) && enPais(p, pa) && enRol(p, r)).length + ')';
 
-  const lista = visibles.filter(p => enArea(p, a) && enRol(p, r))
+  const lista = visibles.filter(p => enArea(p, a) && enPais(p, pa) && enRol(p, r))
                         .sort((x, y) => !deEventos(r) ? x.nombre.localeCompare(y.nombre)
                                       : enListado ? desdeHoy(x) - desdeHoy(y) || x.nombre.localeCompare(y.nombre)   // listado: desde hoy (día y mes)
                                       : x.orden - y.orden || x.nombre.localeCompare(y.nombre));                     // parrilla: por fecha
@@ -444,7 +486,7 @@ function pinta(){
       c.className = 'cuerpo';
       c.id = 'f' + p.id;   // para ir a ella desde el buscador
       rellena(c, p, true);
-      if (p.fb){
+      if (p.fb && !p.lista){
         // la imagen (primer hijo de la ficha) abre el perfil o la web del evento
         c.firstChild.style.cursor = 'pointer';
         c.firstChild.onclick = () => window.open(p.fb, '_blank', 'noopener');
@@ -483,7 +525,7 @@ function pinta(){
 // de su tipo (events/seminars o people) en su área, y la ficha a la vista
 let buscado = null, encontradas = [], activa = -1;
 const MAX_SUGS = 50;          // coincidencias como mucho (se ven 10, el resto desplazando)
-const detalle = p => p.evento ? [p.fecha, p.lugar].filter(Boolean).join(' ') || p.tipo : p.lugar || 'people';
+const detalle = p => p.lista ? p.lugar || 'list' : p.evento ? [p.fecha, p.lugar].filter(Boolean).join(' ') || p.tipo : p.lugar || 'people';
 const normaliza = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 function sugerencias(){ personas.forEach(p => p.clave = normaliza(p.nombre)); }
 function muestra(){
@@ -514,8 +556,10 @@ function marca(i){
 function ir(p){
   buscado = p;
   $('chkListado').checked = true;
-  $('selRol').value = p.evento ? p.roles[0] : PEO;
-  $('selArea').value = p.area;
+  $('selRol').value = p.evento || p.lista ? p.roles[0] : PEO;
+  $('selArea').value = p.area == MUNDIAL ? TODOS : p.area;
+  pinta();                                       // rehace los países del área
+  $('selPais').value = p.pais == '-' ? TODOS : p.pais;
   pinta();
   const c = document.getElementById('f' + p.id);
   if (c){
@@ -553,6 +597,17 @@ $('info').onclick = () => {
 $('fCerrar').onclick = () => $('ficha').close();
 $('ficha').onclick = e => { if (e.target == $('ficha')) $('ficha').close(); };   // click fuera: se cierra
 $('selArea').onchange = pinta;
+// buscador: si los selectores bajan a la línea siguiente, la mitad de lo que hay
+// hasta el final del primero (área); en la misma línea, el ancho de siempre (7em)
+function anchoBuscar(){
+  const b = $('buscar'), sel = $('selArea');
+  b.style.width = b.style.maxWidth = '';
+  if (sel.offsetTop <= b.offsetTop) return;   // misma línea
+  const ancho = (sel.getBoundingClientRect().right - b.getBoundingClientRect().left) / 2;
+  if (ancho > b.offsetWidth){ b.style.width = ancho + 'px'; b.style.maxWidth = 'none'; }
+}
+window.addEventListener('resize', anchoBuscar);
+$('selPais').onchange = pinta;
 $('selRol').onchange = pinta;
 $('chkListado').onchange = pinta;
 // privatePeople.out.js es solo local: si falta, salen solo las públicas
