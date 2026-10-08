@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WWT</title>
 <!-- Todo se lee en su sitio, como index.htm: data/roles.js, data/*People.out.js y data/publicEvent.out.js (los crea import.sh)
-     y las fotos de import/src.page/ (fotos.js lo genera index.sh). -->
+     y las fotos de import/src.getpages/ (fotos.js lo genera index.sh). -->
 <script src="data/roles.js"></script>
 <script src="data/publicPeople.out.js"></script>
 <script src="data/publicEvent.out.js"></script>
@@ -103,7 +103,7 @@ const PEO = 'peo';                           // opción del selector de rol: tod
 const $ = id => document.getElementById(id);
 
 function fbkey(u){
-  // clave de la foto de una url de FB (igual que fbkey de import/src.page/page.py y revisar.html e index.htm):
+  // clave de la foto de una url de FB (igual que fbkey de import/src.getpages/page.py y revisar.html e index.htm):
   // perfil -> usuario o id; evento -> event_<id>; grupo -> group_<nombre>;
   // publicacion de grupo -> post_<id>; '' si no identifica una pagina
   u=String(u||'').trim();
@@ -121,7 +121,7 @@ function fbkey(u){
   return k.replace(/[^\w.-]/gu,'_').toLowerCase();
 }
 function webkey(u){
-  // clave de la foto de una url que no es de FB (igual que webkey de import/src.page/page.py): web_<sitio_ruta>
+  // clave de la foto de una url que no es de FB (igual que webkey de import/src.getpages/page.py): web_<sitio_ruta>
   u=String(u||'').trim();
   if (!/^https?:\/\//i.test(u) || /^https?:\/\/([a-z]+\.)?facebook\.com\//.test(u)) return '';
   const s=u.toLowerCase().replace(/^https?:\/\/(www\.)?/,'').split('#')[0].replace(/\/+$/,'');
