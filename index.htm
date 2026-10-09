@@ -24,8 +24,6 @@
   .filtros { display: flex; flex-wrap: wrap; gap: 12px; margin: -16px -16px 16px; padding: 12px 16px; align-items: center;
              position: sticky; top: 0; z-index: 1; background: var(--barra); box-shadow: 0 1px 6px rgba(0,0,0,.6); }
   select { font-size: 1em; padding: 4px 6px; background: var(--tarjeta); color: var(--texto); border: 1px solid var(--borde); border-radius: 4px; }
-  #total { color: var(--suave); }
-  .junto { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }   /* list y (total): no se separan al saltar de línea */
   #buscar { font-size: 1em; padding: 4px 6px; width: 7em; max-width: 22vw;   /* buscador */
              background: var(--tarjeta); color: var(--texto); border: 1px solid var(--borde); border-radius: 4px; }
   #info { display: flex; }
@@ -86,10 +84,7 @@
   <label><select id="selArea" data-inicial="Asia"></select></label>
   <label><select id="selPais"></select></label>   <!-- países del área elegida -->
   <label><select id="selRol" data-inicial="org"></select></label>
-  <span class="junto">
-    <label><input type="checkbox" id="chkListado"> list</label>
-    <span id="total"></span>   <!-- total de la selección, con y sin foto (en los selectores, solo los que se listan: con foto) -->
-  </span>
+  <label><input type="checkbox" id="chkListado"> list</label>
 </div>
 <div id="parrilla" class="parrilla"></div>
 <div id="listado" class="listado oculto"></div>
@@ -454,29 +449,27 @@ function pinta(){
   const a = val($('selArea')), r = val($('selRol'));
   let pa = val($('selPais'));
   // Solo se listan los que tienen foto, salvo los eventos en el listado (todos).
-  // Cada selector cuenta (entre paréntesis) siempre los que tienen foto, según lo
-  // elegido en el otro; detrás, el total de la selección (con y sin foto)
-  // Las list no tienen foto: cuentan todas y salen siempre en el listado
+  // Cada selector cuenta (entre paréntesis) lo que sale en el listado (personas con
+  // foto, todos los eventos y las list), según lo elegido en el otro
   const enListado = $('chkListado').checked || r == LIS;
-  const conFoto = personas.filter(p => p.foto || p.lista);
+  const deListado = personas.filter(p => p.foto || p.lista || p.evento);
   const visibles = personas.filter(p => p.foto || p.lista || (enListado && p.evento) || p === buscado);   // la buscada, aunque no tenga foto
   const areas = [...new Set(personas.map(p => p.area))].filter(x => x != MUNDIAL)
                   .sort((x, y) => (x == '-') - (y == '-') || x.localeCompare(y));
   opciones($('selArea'), areas, v => v == '-' ? 'no area' : v,
-           v => conFoto.filter(p => enArea(p, v) && enRol(p, r)).length);
+           v => deListado.filter(p => enArea(p, v) && enRol(p, r)).length);
   // países del área elegida (dinámico: cambia con el área)
   const paises = [...new Set(personas.filter(p => enArea(p, a) && p.pais != '-').map(p => p.pais))].sort((x, y) => x.localeCompare(y));
   opciones($('selPais'), paises, v => v,
-           v => conFoto.filter(p => enArea(p, a) && enPais(p, v) && enRol(p, r)).length);
+           v => deListado.filter(p => enArea(p, a) && enPais(p, v) && enRol(p, r)).length);
   pa = $('selPais').value;   // si el país no es de esta área, opciones lo ha dejado en all
   // tras 'all', list y dos grupos: events (events, seminars) y people (people, organizer, artist y el resto de roles)
   const PRIMEROS = {[LIS]: 'list', [EVT]: 'events', [SEM]: 'seminars', [PEO]: 'people', org: 'organizer', art: 'artist'};
   opciones($('selRol'), [LIS, {grupo: 'events', valores: [EVT, SEM]},
                          {grupo: 'people', valores: [PEO, 'org', 'art', ...Object.keys(ROLES).filter(v => !(v in PRIMEROS))]}],
            v => PRIMEROS[v] || ROLES[v].nombre || v,
-           v => conFoto.filter(p => enArea(p, a) && enPais(p, pa) && enRol(p, v)).length);
+           v => deListado.filter(p => enArea(p, a) && enPais(p, pa) && enRol(p, v)).length);
   anchoBuscar();   // el selector de área cambia de ancho con sus opciones
-  $('total').textContent = '(' + personas.filter(p => enArea(p, a) && enPais(p, pa) && enRol(p, r)).length + ')';
 
   const lista = visibles.filter(p => enArea(p, a) && enPais(p, pa) && enRol(p, r))
                         .sort((x, y) => !deEventos(r) ? x.nombre.localeCompare(y.nombre)
