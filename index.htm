@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WWT</title>
-<!-- Todo se lee en su sitio, como index.htm: data/roles.js, data/*People.out.js y data/publicEvent.out.js (los crea import.sh)
-     y las fotos de import/src.openurl/ (fotos.js lo genera index.sh). -->
-<script src="data/roles.js"></script>
+<!-- Todo se lee en su sitio, como index.htm: data/aux.js, data/*People.out.js y data/publicEvent.out.js (los crea import.sh)
+     y las fotos de review/foto0,1,2,9/ (fotoid.js lo genera review/fotoid.py). -->
+<script src="data/aux.js"></script>
 <script src="data/publicPeople.out.js"></script>
 <script src="data/publicEvent.out.js"></script>
-<script src="fotos.js"></script>
+<script src="fotoid.js"></script>
 <style>
   :root { color-scheme: dark;
           --fondo: #222; --barra: #444; --tarjeta: #3a3a3a; --sinfoto: #474747;
@@ -91,8 +91,7 @@
 <dialog id="ficha"><button id="fCerrar" title="close">&times;</button><div id="fCuerpo" class="cuerpo"></div></dialog>
 
 <script>
-const FOTOS = 'fotos/';
-const FOTOS2 = 'fotos2/';   // portadas: las de los eventos
+const FOTOS = 'foto';      // + carpeta (0 a mano, 1 perfil, 2 portada, 9 dudosas) + '/'
 const TODOS = '*';
 const EVT = 'evt';                           // opción del selector de rol: eventos (publicEvent), no personas
 const SEM = 'sem';                           // opción del selector de rol: seminarios (eventos de tipo seminar), aparte de evt
@@ -102,74 +101,41 @@ const LIS = 'lis';                           // opción del selector de rol: lis
 const MUNDIAL = 'all';                       // área de las list mundiales: salen en todas las áreas
 const $ = id => document.getElementById(id);
 
-function fbkey(u){
-  // clave de la foto de una url de FB (igual que fbkey de import/src.openurl/page.py y revisar.html e index.htm):
-  // perfil -> usuario o id; evento -> event_<id>; grupo -> group_<nombre>;
-  // publicacion de grupo -> post_<id>; '' si no identifica una pagina
-  u=String(u||'').trim();
-  const m=u.match(/[?&]id=(\d+)/); if (m) return m[1];
-  const p=u.replace(/^https?:\/\/([a-z]+\.)?facebook\.com\//,'').split('?')[0].split('#')[0].split('/').filter(x => x);
-  // foto suelta -> photo_<fbid>; enlace share/... -> share_<código>
-  const fb=u.match(/[?&]fbid=(\d+)/); if (fb && p.length && ['photo','photo.php'].includes(p[0].toLowerCase())) return 'photo_'+fb[1];
-  if (p.length>1 && p[0].toLowerCase()=='share') return ('share_'+p.slice(1).join('_')).replace(/[^\w.-]/gu,'_').toLowerCase();
-  if (!p.length || ['share','photo','photo.php','watch','reel','story.php','permalink.php','dyi'].includes(p[0].toLowerCase())) return '';
-  let k=p[0];
-  const ids=p.slice(1).filter(x => /^\d+$/.test(x));
-  if (p[0]=='events') k='event_'+(ids.length ? ids[ids.length-1] : (p[1]||''));
-  else if (p[0]=='groups' && p.length>1) k=(p.length>2 && ['posts','permalink'].includes(p[2]) && ids.length) ? 'post_'+ids[ids.length-1] : 'group_'+p[1];
-  else if (p[0]=='pages' && p.length>1) k=ids.length ? ids[ids.length-1] : p[1];
-  return k.replace(/[^\w.-]/gu,'_').toLowerCase();
-}
-function webkey(u){
-  // clave de la foto de una url que no es de FB (igual que webkey de import/src.openurl/page.py): web_<sitio_ruta>
-  u=String(u||'').trim();
-  if (!/^https?:\/\//i.test(u) || /^https?:\/\/([a-z]+\.)?facebook\.com\//.test(u)) return '';
-  const s=u.toLowerCase().replace(/^https?:\/\/(www\.)?/,'').split('#')[0].replace(/\/+$/,'');
-  return ('web_'+s.replace(/[^a-z0-9.-]/g,'_').replace(/_+/g,'_').replace(/^_+|_+$/g,'')).slice(0,150);
-}
-
-// Foto (ruta): perfil_<usuarioFB> y si no perfil_<nombre>, en jpg/webp/png (como index.htm)
-const fotoSet = new Set(typeof fotosPerfil == 'undefined' ? [] : fotosPerfil);
-const portadaSet = new Set(typeof fotosPortada == 'undefined' ? [] : fotosPortada);
-function foto(nombre, url){
-  const claves = [];
-  if (/facebook\.com\//.test(url || '')){ const k = fbkey(url); if (k) claves.push('perfil_' + k); }
-  claves.push('perfil_' + String(nombre).replace(/[^\p{L}\p{N}\-]/gu, '_'));
-  for (const k of claves) for (const e of ['jpg', 'webp', 'png']) if (fotoSet.has(k + '.' + e)) return FOTOS + encodeURIComponent(k + '.' + e);
-  return '';
-}
-// Portada (ruta) de un evento: portada_<fbkey> en fotos2/; si no hay, la foto
-// de perfil de su url (página o persona), como index.htm
-function portada(url){
-  const k = /facebook\.com\//.test(url || '') ? fbkey(url) : webkey(url);
-  if (k) for (const e of ['jpg', 'webp', 'png']) if (portadaSet.has('portada_' + k + '.' + e)) return FOTOS2 + encodeURIComponent('portada_' + k + '.' + e);
-  if (k) for (const e of ['jpg', 'webp', 'png']) if (fotoSet.has('perfil_' + k + '.' + e)) return FOTOS + encodeURIComponent('perfil_' + k + '.' + e);
+// Foto (ruta) por el id del campo 9 (CAMPO.idfoto, '' sin foto): la primera
+// que haya en review/foto0,1,2,9 (eventos 0,2,1,9: la portada antes), como index.htm
+const fotoSets = {};
+for (const c of ['0', '1', '2', '9']) fotoSets[c] = new Set(typeof fotosId != 'undefined' && fotosId[c] ? fotosId[c] : []);
+function foto(idfoto, evento){
+  if (!idfoto) return '';
+  for (const c of (evento ? ['0', '2', '1', '9'] : ['0', '1', '2', '9']))
+    for (const e of ['jpg', 'webp', 'png'])
+      if (fotoSets[c].has(idfoto + '.' + e)) return FOTOS + c + '/' + idfoto + '.' + e;
   return '';
 }
 
-// Filas: [area, pais, ciudad, roles, nombre, públicos (#), comentario privado, url].
+// Filas: [area, pais, ciudad, roles, nombre, públicos (#), comentario privado, url, idfoto].
 // Una persona por foto (o, sin foto, por url de perfil o por nombre): las filas
 // repetidas suman roles y completan área, vídeo y foto.
 let personas = [];
 function cargaFilas(filas){
   const porClave = new Map();
   for (const c of filas){
-    const f = foto(c[4], c[7]);
-    const url = c[7] && c[7] != '-' ? c[7] : '';
-    const clave = f || url || 'nombre:' + c[4];
+    const f = foto(c[CAMPO.idfoto], false);
+    const url = c[CAMPO.urlfb] && c[CAMPO.urlfb] != '-' ? c[CAMPO.urlfb] : '';
+    const clave = f || url || 'nombre:' + c[CAMPO.name];
     // campo 6: datos públicos separados por # (textos -> coment; urls -> notas, a la
     // línea de enlaces); campo 7: comentario privado (solo en privatePeople)
-    const pub = String(c[5] || '').split('#').map(x => x.trim()).filter(x => x && x != '-');
+    const pub = String(c[CAMPO.varios] || '').split('#').map(x => x.trim()).filter(x => x && x != '-');
     const coments = pub.filter(x => !/^https?:\/\//.test(x));
-    const notas = [...pub.filter(x => /^https?:\/\//.test(x)), String(c[6] || '').trim()].filter(x => x && x != '-').join(',');
+    const notas = [...pub.filter(x => /^https?:\/\//.test(x)), String(c[CAMPO.private] || '').trim()].filter(x => x && x != '-').join(',');
     const fb = /facebook\.com\//.test(url) ? url : '';
-    const area  = c[0] && c[0] != '-' ? c[0] : '-';
-    const pais  = c[1] && c[1] != '-' ? c[1] : '-';
-    const lugar = [c[2], c[1]].filter(x => x && x != '-').join(', ');   // "ciudad, país" (para el listado)
-    const roles = String(c[3] || '').split(',').map(r => r.trim()).map(r => ROLES_EQUIVALENCIAS[r] || r).filter(r => ROLES[r]);
+    const area  = c[CAMPO.area] && c[CAMPO.area] != '-' ? c[CAMPO.area] : '-';
+    const pais  = c[CAMPO.country] && c[CAMPO.country] != '-' ? c[CAMPO.country] : '-';
+    const lugar = [c[CAMPO.city], c[CAMPO.country]].filter(x => x && x != '-').join(', ');   // "ciudad, país" (para el listado)
+    const roles = String(c[CAMPO.tiporol] || '').split(',').map(r => r.trim()).map(r => ROLES_EQUIVALENCIAS[r] || r).filter(r => ROLES[r]);
     const video = (notas.match(/https?:\/\/[^\s,]*youtu[^\s,]*/) || [''])[0];
     const p = porClave.get(clave);
-    if (!p){ porClave.set(clave, {area, pais, lugar, roles, nombre: c[4], video, foto: f, fb, notas: notas ? [notas] : [],
+    if (!p){ porClave.set(clave, {area, pais, lugar, roles, nombre: c[CAMPO.name], video, foto: f, fb, notas: notas ? [notas] : [],
                                      coment: coments}); continue; }
     if (!p.fb) p.fb = fb;
     for (const t of coments) if (!p.coment.includes(t)) p.coment.push(t);
@@ -199,9 +165,9 @@ const claveNom = (n, f) => String(n).toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''
 // día de inicio de EVT.<mes>.<MES>.<días>.<año> como nº de día (el día de fin no cuenta); null sin fecha EVT
 // varios (campo 6): org en el subcampo 1 (milonga) o 3 (event), "org:<nombre>" separados
 // por comas; al final, opcional, www (web que no es de Facebook)
-const orgsDe = e => String(String(e[5] || '').split('#')[e[3] == 'milonga' ? 1 : 3] || '').split(',')
+const orgsDe = e => String(String(e[CAMPO.varios] || '').split('#')[e[CAMPO.tiporol] == 'milonga' ? 1 : 3] || '').split(',')
   .map(x => x.trim().match(/^org:\s*(.+)$/)).filter(Boolean).map(m => m[1]);
-const wwwDe = e => { const u = String(e[5] || '').split('#').pop().trim(); return /^https?:\/\//.test(u) ? u : ''; };
+const wwwDe = e => { const u = variosSinFecha(e).split('#').pop().trim(); return /^https?:\/\//.test(u) ? u : ''; };
 const inicio = d => {
   const f = String(d || '').split('.'), dia = parseInt(String(f[3] || '').split('-')[0]), mes = parseInt(f[1]), anyo = parseInt(f[4]);
   return f[0] == 'EVT' && !isNaN(dia + mes + anyo) ? Math.round(Date.UTC(anyo, mes, dia) / 864e5) : null;
@@ -209,31 +175,31 @@ const inicio = d => {
 function eventos(){
   const porClave = new Map(), lista = [];
   for (const e of (typeof publicEvent == 'undefined' ? [] : publicEvent)){
-    if (!String(e[3]).startsWith('event')) continue;
-    const url = /^https?:\/\//.test(e[7] || '') ? e[7] : '';
+    if (!String(e[CAMPO.tiporol]).startsWith('event')) continue;
+    const url = /^https?:\/\//.test(e[CAMPO.urlfb] || '') ? e[CAMPO.urlfb] : '';
     // misma url y día de inicio (una web puede llevar varios eventos), o mismo nombre y
     // día de inicio (solo con fecha); el día de inicio, con ±1 día de margen
-    const n = inicio(e[6]);
-    const claves = d => [...[url, wwwDe(e)].filter(Boolean).map(u => 'u:' + claveUrl(u) + '#' + (n == null ? e[6] : n + d)), n != null && 'n:' + claveNom(e[4], n + d)].filter(Boolean);
+    const n = inicio(fechaDe(e));
+    const claves = d => [...[url, wwwDe(e)].filter(Boolean).map(u => 'u:' + claveUrl(u) + '#' + (n == null ? fechaDe(e) : n + d)), n != null && 'n:' + claveNom(e[CAMPO.name], n + d)].filter(Boolean);
     const ya = [0, -1, 1].flatMap(d => n == null && d ? [] : claves(d)).map(k => porClave.get(k)).find(Boolean);
     if (ya){
       // repetido: completa lo que le falte
       if (!ya.fb && url) ya.fb = url;
-      if (!ya.foto) ya.foto = portada(url) || portada(wwwDe(e));
+      if (!ya.foto) ya.foto = foto(e[CAMPO.idfoto], true);
       const orgs = orgsDe(e);
       for (const o of orgs) if (!ya.orgs.includes(o)) ya.orgs.push(o);
       if (wwwDe(e) && !ya.www.includes(wwwDe(e))) ya.www.push(wwwDe(e));
       for (const k of claves(0)) if (!porClave.has(k)) porClave.set(k, ya);
       continue;
     }
-    const f = String(e[6] || '').split('.');
+    const f = fechaDe(e).split('.');
     const fecha = f[0] == 'EVT' ? [f[3], f[2], f[4]].filter(Boolean).join(' ') : '';
     const orden = f[0] == 'EVT' ? (parseInt(f[4]) || 9999) * 100 + (parseInt(f[1]) || 0) : 999999;
     const mes = f[0] == 'EVT' ? parseInt(f[1]) : NaN, dia = parseInt(f[3]) || 1;   // día sin fijar ('?'): el 1
     const orgs = orgsDe(e);
-    const ev = {evento: true, area: e[0] && e[0] != '-' ? e[0] : '-', pais: e[1] && e[1] != '-' ? e[1] : '-', roles: [String(e[3]).indexOf('seminar') != -1 ? SEM : EVT], nombre: e[4], foto: portada(url) || portada(wwwDe(e)),
-                         fb: url, tipo: String(e[3]).replace(/^event\s*/, '') || 'event',
-                         lugar: [e[2], e[1]].filter(x => x && x != '-').join(', '), fecha, orden, mes, dia, orgs, www: wwwDe(e) ? [wwwDe(e)] : [],
+    const ev = {evento: true, area: e[CAMPO.area] && e[CAMPO.area] != '-' ? e[CAMPO.area] : '-', pais: e[CAMPO.country] && e[CAMPO.country] != '-' ? e[CAMPO.country] : '-', roles: [String(e[CAMPO.tiporol]).indexOf('seminar') != -1 ? SEM : EVT], nombre: e[CAMPO.name], foto: foto(e[CAMPO.idfoto], true),
+                         fb: url, tipo: String(e[CAMPO.tiporol]).replace(/^event\s*/, '') || 'event',
+                         lugar: [e[CAMPO.city], e[CAMPO.country]].filter(x => x && x != '-').join(', '), fecha, orden, mes, dia, orgs, www: wwwDe(e) ? [wwwDe(e)] : [],
                          video: '', notas: [], coment: []};
     for (const k of claves(0)) porClave.set(k, ev);
     lista.push(ev);
@@ -243,9 +209,9 @@ function eventos(){
 
 // List (opción list): las filas de publicEvent.out.js de tipo list; solo nombre y url
 function listas(){
-  return (typeof publicEvent == 'undefined' ? [] : publicEvent).filter(e => e[3] == 'list').map(e => ({
-    lista: true, area: e[0] && e[0] != '-' ? e[0] : '-', pais: e[1] && e[1] != '-' ? e[1] : '-', roles: [LIS], nombre: e[4],
-    fb: /^https?:\/\//.test(e[7] || '') ? e[7] : '', lugar: [e[2], e[1]].filter(x => x && x != '-').join(', '),
+  return (typeof publicEvent == 'undefined' ? [] : publicEvent).filter(e => e[CAMPO.tiporol] == 'list').map(e => ({
+    lista: true, area: e[CAMPO.area] && e[CAMPO.area] != '-' ? e[CAMPO.area] : '-', pais: e[CAMPO.country] && e[CAMPO.country] != '-' ? e[CAMPO.country] : '-', roles: [LIS], nombre: e[CAMPO.name],
+    fb: /^https?:\/\//.test(e[CAMPO.urlfb] || '') ? e[CAMPO.urlfb] : '', lugar: [e[CAMPO.city], e[CAMPO.country]].filter(x => x && x != '-').join(', '),
     foto: '', video: '', notas: [], coment: []}));
 }
 
@@ -285,11 +251,11 @@ function opciones(sel, valores, etiqueta, cuenta){
 // nombre de persona -> eventos que organiza (orgsDe). url: campo 8, o '' sin enlace
 const organiza = new Map();
 for (const e of (typeof publicEvent == 'undefined' ? [] : publicEvent)){
-  if (e[3] == 'venue') continue;
-  const url = /^https?:\/\//.test(e[7] || '') ? e[7] : '';
+  if (e[CAMPO.tiporol] == 'venue') continue;
+  const url = /^https?:\/\//.test(e[CAMPO.urlfb] || '') ? e[CAMPO.urlfb] : '';
   for (const o of orgsDe(e)){
     if (!organiza.has(o)) organiza.set(o, []);
-    if (!organiza.get(o).some(x => x.nombre == e[4])) organiza.get(o).push({nombre: e[4], url});
+    if (!organiza.get(o).some(x => x.nombre == e[CAMPO.name])) organiza.get(o).push({nombre: e[CAMPO.name], url});
   }
 }
 
@@ -377,16 +343,20 @@ function rellenaPersona(c, p, conLugar){
     });
     d.appendChild(par);
   }
-  for (const n of p.coment){
-    // campo 6: textos públicos (escuela, milonga...)
+  // campo 6: textos públicos (escuela, milonga...), en una sola línea, los trozos
+  // separados por comas y sin repetir
+  const coments = [];
+  for (const n of p.coment) for (const t of n.split(/,/).map(x => x.trim()))
+    if (t && !coments.includes(t)) coments.push(t);
+  if (coments.length){
     const par = document.createElement('p');
-    par.textContent = n;
+    par.textContent = coments.join(', ');
     d.appendChild(par);
   }
-  // notas (urls del campo 6 y comentario privado del campo 7), detrás de org: en una
-  // sola línea, los trozos separados por comas. Se corta por " / " (texto del perfil
-  // de FB) y por "," sin espacio detrás (url,texto). Las urls no salen aquí: van a
-  // la línea de enlaces
+  // notas (urls del campo 6 y comentario privado del campo 7), en otra línea (info:),
+  // los trozos separados por comas; no repite los ya puestos en la línea anterior.
+  // Se corta por " / " (texto del perfil de FB) y por "," sin espacio detrás
+  // (url,texto). Las urls no salen aquí: van a la línea de enlaces
   const urls = [], textos = [];
   for (const n of p.notas) for (const linea of n.split(/\s+\/\s+|,(?!\s)/)){
     let texto = '';
@@ -395,11 +365,11 @@ function rellenaPersona(c, p, conLugar){
       else texto += trozo;
     }
     texto = texto.replace(/^[\s,]+|[\s,]+$/g, '');
-    if (texto && !textos.includes(texto)) textos.push(texto);
+    if (texto && !textos.includes(texto) && !coments.includes(texto)) textos.push(texto);
   }
   if (textos.length){
     const par = document.createElement('p');
-    par.textContent = 'info: ' + textos.join(', ');
+    par.textContent = 'prv: ' + textos.join(', ');
     d.appendChild(par);
   }
   // video, otras webs (por su dominio) y perfil en la misma línea
