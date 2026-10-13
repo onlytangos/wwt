@@ -42,7 +42,7 @@
            border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.5); }
   .cara img, .sinfoto { display: block; flex: none; width: 100%; aspect-ratio: 1; object-fit: contain; background: #000; }   /* foto entera sobre negro */
   .cara img.sinfoto, .cuerpo > img.sinfoto { background: var(--sinfoto); }   /* imagen dummy (img/sinfoto.svg) sobre gris */
-  .cara.evt { grid-column: span 2; }   /* evento: portada (fotos2/) en dos columnas, 16:9 (como revisar), recortada al hueco */
+  .cara.evt { grid-column: span 2; }   /* evento: portada (foto2/) en dos columnas, 16:9 (como revisar), recortada al hueco */
   .cara.evt img, .cara.evt .sinfoto { aspect-ratio: 16 / 9; object-fit: cover; }
   /* ficha de evento: la portada tan alta como el texto de al lado (align-self: stretch) y el ancho
      que da 16:9; recortada al hueco. Sin bajar de 90 px de alto ni pasar de la mitad de la ficha */
@@ -98,7 +98,7 @@ const SEM = 'sem';                           // opción del selector de rol: sem
 const deEventos = r => r == EVT || r == SEM;  // opciones del selector que son eventos
 const PEO = 'peo';                           // opción del selector de rol: todas las personas (sin eventos)
 const LIS = 'lis';                           // opción del selector de rol: list (fuentes de información, tipo list de publicEvent)
-const MUNDIAL = 'all';                       // área de las list mundiales: salen en todas las áreas
+const MUNDIAL = 'World';                     // área de las list mundiales (país world, ciudad *world): salen en todas las áreas
 const $ = id => document.getElementById(id);
 
 // Foto (ruta) por el id del campo 9 (CAMPO.idfoto, '' sin foto): la primera
