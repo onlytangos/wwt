@@ -10,40 +10,76 @@
 <script src="data/publicPeople.out.js"></script>
 <script src="data/publicEvent.out.js"></script>
 <script src="fotoid.js"></script>
+<script src="data/ciudades.js"></script>   <!-- coordenadas de las ciudades (import/coords.py), para el mapa -->
+<script src="data/paises.js"></script>     <!-- polígonos de los países (import/paises_geo.py), para el mapa -->
+<!-- mapa: Leaflet 1.9.4 (aquí, en leaflet/: sin depender de un CDN, que Brave puede bloquear en
+     una página local) con teselas de Esri (gratis, sin clave, con su atribución) -->
+<link rel="stylesheet" href="leaflet/leaflet.css">
+<script src="leaflet/leaflet.js"></script>
 <style>
   :root { color-scheme: dark;
           --fondo: #222; --barra: #444; --tarjeta: #3a3a3a; --sinfoto: #474747;
-          --texto: #eee; --suave: #999; --enlace: #8ab4f8; --borde: #555; }
+          --texto: #eee; --suave: #999; --enlace: #8ab4f8; --borde: #555;
+          --acento: #ffd8b0; }   /* naranja muy claro: marcadores, fecha elegida y fila abierta del listado */
   body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: var(--fondo); color: var(--texto); }
   a { color: var(--enlace); }
+  /* mapa teñido de azul oscuro: las teselas de Esri son grises e imágenes ya pintadas, así
+     que se tiñen con un filtro (sepia da color al gris; hue-rotate lo lleva al azul) */
+  .teselaBase { filter: sepia(1) hue-rotate(180deg) saturate(3) brightness(.85); }
+  .teselaNombres { filter: sepia(.6) hue-rotate(180deg) saturate(1.5); }
+  #mapa.leaflet-container { background: #0d1b2a; }
+  /* créditos del mapa: cortos y discretos (los completos, en la ficha de info) */
+  #mapa .leaflet-control-attribution { background: transparent; color: #8899aa; font-size: 9px; }
+  #mapa .leaflet-control-attribution a { color: inherit; }
+  .creditos { font-size: .8em; color: var(--suave); }
+  /* + y - del zoom, en el color de acento (--acento) */
+  #mapa .leaflet-control-zoom { border: 1px solid var(--acento); }
+  #mapa .leaflet-control-zoom a { background: var(--acento); color: #000; border-bottom-color: #0003;
+                                 width: 20px; height: 20px; line-height: 20px; font-size: 15px; }   /* más pequeños (Leaflet: 30px) */
+  #mapa .leaflet-control-zoom a:hover { background: #ffc890; }
+  #mapa .leaflet-control-zoom a.leaflet-disabled { background: var(--acento); color: #0006; }   /* lo que se ve mientras cargan las teselas */
   .cuerpo a { text-decoration: none; font-weight: 600; }   /* enlaces de la ficha: perfil, video... */
   .cuerpo a:hover { color: var(--texto); }
   .cuerpo p.enlaces { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; }
   .cuerpo p.enlaces a { display: inline-flex; align-items: center; gap: 5px; }
   .cuerpo .icono { height: 16px; width: auto; }
-  .filtros { display: flex; flex-wrap: wrap; gap: 12px; margin: -16px -16px 16px; padding: 12px 16px; align-items: center;
-             position: sticky; top: 0; z-index: 1; background: var(--barra); box-shadow: 0 1px 6px rgba(0,0,0,.6); }
+  .filtros { display: flex; justify-content: center; margin: -16px -16px 16px; padding: 12px 16px;   /* el fondo, a todo el ancho */
+             position: sticky; top: 0; z-index: 2; background: var(--barra); box-shadow: 0 1px 6px rgba(0,0,0,.6); }
   select { font-size: 1em; padding: 4px 6px; background: var(--tarjeta); color: var(--texto); border: 1px solid var(--borde); border-radius: 4px; }
-  #buscar { font-size: 1em; padding: 4px 6px; width: 7em; max-width: 22vw;   /* buscador */
+  #buscar { font-size: 1em; padding: 4px 6px; width: 100%; box-sizing: border-box;   /* buscador: todo el hueco de .busca */
              background: var(--tarjeta); color: var(--texto); border: 1px solid var(--borde); border-radius: 4px; }
   #info { display: flex; }
   .cuerpo.encontrado { outline: 2px solid var(--enlace); }   /* ficha buscada, en el listado */
-  .busca { position: relative; }   /* buscador, tras el icono KK */
+  .busca { position: relative; flex: 1 1 8.5em; min-width: 8.5em; }   /* 2em menos (antes 10.5em): sitio para el botón map */
+  #selArea, #selRol { padding-right: 16px; }
+  .busca, #selArea { margin-right: -4px; }   /* búsqueda y selectores, a 2px (el gap de la línea es 6px) */   /* 10px más anchos cada uno: la caja de búsqueda, 20px menos y todo junto */   /* buscador, tras el icono KK: crece hasta llenar la línea 1 (tan ancha como la 2) */
   #sugs { position: absolute; left: 0; top: 100%; margin-top: 4px; width: min(28em, 90vw); z-index: 2;   /* hasta 10 sugerencias */
           background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,.6);
           max-height: calc(10 * 26px); overflow-y: auto; }   /* 10 líneas a la vista; el resto, desplazando */
   #sugs div { height: 26px; line-height: 26px; padding: 0 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #sugs div.activa, #sugs div:hover { background: var(--barra); }
   #sugs small { color: var(--suave); }
+  #sugs .tipo { display: inline-block; width: 3.2em; margin-right: 6px; font-size: .75em; font-weight: 600;   /* tipo: EVT, ORG... */
+                text-align: center; color: var(--suave); border: 1px solid var(--borde); border-radius: 3px; line-height: 1.5; }
+  /* área, país y ciudad: amarillo claro, más amarillo cuanto más concreto */
+  #sugs .tipo.geoARE { background: #fffbe8; border-color: #fffbe8; color: #333; }
+  #sugs .tipo.geoCON { background: #fff3b8; border-color: #fff3b8; color: #333; }
+  #sugs .tipo.geoCIT { background: #ffe680; border-color: #ffe680; color: #333; }
   #info img { width: 22px; height: 22px; opacity: .8; }
   #info:hover img { opacity: 1; }
-  .parrilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(75px, 1fr)); gap: 6px; align-items: stretch; }
+  /* parrilla: de 4 a 8 imágenes por fila (--cols, columnasParrilla) y la última fila, centrada */
+  .parrilla { --cols: 8; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; align-items: stretch; }
+  .parrilla .cara { flex: 0 0 calc((100% - (var(--cols) - 1) * 6px) / var(--cols)); }
   .cara { position: relative; margin: 0; background: #000; display: flex; flex-direction: column;   /* negro bajo la foto y el nombre */
            border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.5); }
   .cara img, .sinfoto { display: block; flex: none; width: 100%; aspect-ratio: 1; object-fit: contain; background: #000; }   /* foto entera sobre negro */
   .cara img.sinfoto, .cuerpo > img.sinfoto { background: var(--sinfoto); }   /* imagen dummy (img/sinfoto.svg) sobre gris */
-  .cara.evt { grid-column: span 2; }   /* evento: portada (foto2/) en dos columnas, 16:9 (como revisar), recortada al hueco */
+  /* evento: portada (foto2/) 16:9 (como revisar), recortada al hueco. Mezclado con personas
+     (all), ocupa el sitio de dos; solo eventos (.evts), cada uno es una imagen de la fila */
+  .parrilla:not(.evts) .cara.evt { flex-basis: calc(2 * (100% - (var(--cols) - 1) * 6px) / var(--cols) + 6px); }
   .cara.evt img, .cara.evt .sinfoto { aspect-ratio: 16 / 9; object-fit: cover; }
+  /* logo (list de hoy-milonga, faitango...): entero, sobre blanco y con margen */
+  .cara.evt img.logo, .cuerpo > img.logo { object-fit: contain; background: #fff; padding: 6%; box-sizing: border-box; }
   /* ficha de evento: la portada tan alta como el texto de al lado (align-self: stretch) y el ancho
      que da 16:9; recortada al hueco. Sin bajar de 90 px de alto ni pasar de la mitad de la ficha */
   .cuerpo > img.portada { flex: none; align-self: stretch; width: auto; height: auto; min-height: 90px;
@@ -52,7 +88,7 @@
                      text-align: center; overflow-wrap: anywhere; }
   .yt { position: absolute; top: 3px; right: 3px; display: flex; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
   .yt img { width: 20px; height: 14px; }
-  .cara img, .sinfoto { cursor: pointer; }
+  .cara img, .sinfoto, .cara figcaption { cursor: pointer; }   /* la imagen y el pie abren la ficha */
   dialog { border: 1px solid var(--borde); border-radius: 8px; padding: 16px; width: min(520px, 90vw);
            background: var(--barra); color: var(--texto); box-shadow: 0 4px 24px rgba(0,0,0,.8); }
   dialog { margin-top: 56px; }   /* fichas arriba, bajo la barra */
@@ -69,23 +105,110 @@
   .cuerpo h2 { margin: 0 0 8px; font-size: 1.1em; }
   .cuerpo p { margin: 6px 0; font-size: .9em; overflow-wrap: anywhere; }
   /* listado: las mismas fichas, una debajo de otra */
-  .listado { display: flex; flex-direction: column; gap: 8px; max-width: 640px; margin: 0 auto; }
+  .listado { display: flex; flex-direction: column; gap: 8px; max-width: 640px; margin: 0 auto; }   /* del mismo ancho que la ficha de detalle */
   .listado .cuerpo { padding: 12px; background: var(--barra); border: 1px solid var(--borde); border-radius: 8px; }
   .listado .cuerpo > img, .listado .cuerpo > .sinfoto { aspect-ratio: 16 / 9; }   /* en el listado, todas 16:9 (también las de persona) */
+  /* panel de fechas (eventos): año, YEAR, meses, año siguiente; el botón con el foco, resaltado */
+  /* la parte fija: las líneas una debajo de otra, centradas; el ancho, el de la más larga
+     (sin pasar del de la ventana: los meses, entonces, se desplazan de lado) */
+  .cabecera { display: flex; flex-direction: column; gap: 12px; width: fit-content; max-width: 100%; min-width: 0; }
+  .linea1 { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center; }
+  /* con el panel de fechas, la primera línea no marca el ancho (width 0 + min-width 100%): toma el
+     de la cabecera, el de los meses (y el mapa); el buscador y los selectores se estrechan para caber */
+  .cabecera:has(#fechas:not(.oculto)) .linea1 { width: 0; min-width: 100%; flex-wrap: nowrap; }
+  .cabecera:has(#fechas:not(.oculto)) .linea1 > label { flex: 0 1 auto; min-width: 4.5em; }
+  .cabecera:has(#fechas:not(.oculto)) .linea1 select { width: 100%; }
+  .cabecera:has(#fechas:not(.oculto)) .busca { flex-basis: 5em; min-width: 5em; }
+  .fechas { display: flex; gap: 4px; align-items: stretch; justify-content: center; min-width: 0; }
+  #fBotones { display: flex; min-width: 0; overflow-x: auto; scrollbar-width: thin; }   /* los botones, juntos; si no caben, con barra fina */
+  .fechas button, #bMapa, #bListado { flex: none; font-size: .85em; padding: 3px 7px; white-space: nowrap; cursor: pointer;
+                   background: var(--tarjeta); color: var(--texto); border: 1px solid var(--borde); border-radius: 4px; }
+  #fBotones button { border-radius: 0; margin-left: -1px; }   /* juntos: borde compartido, redondeados solo los extremos */
+  #fBotones button:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
+  #fBotones button:last-child { border-radius: 0 4px 4px 0; }
+  #fBotones button { display: flex; flex-direction: column; align-items: center; line-height: 1.25; padding: 4px 7px; }   /* dos líneas: nombre y cuántos */
+  /* los meses, hasta el ancho del panel del mapa (el de la cabecera): la fila ocupa todo y
+     cada botón crece por igual a partir de su ancho */
+  #fBotones { flex: 1 1 auto; }
+  #fBotones button { flex: 1 0 auto; }
+  #fBotones button small { font-size: .85em; color: var(--suave); }
+  #fBotones button.activo small { color: #333; }
+  .fechas button.activo { background: var(--acento); border-color: var(--acento); color: #000; position: relative; }
+  /* listado: cada ficha, una línea (nombre - lugar); el click abre el detalle (la ficha del diálogo) */
+  .listado .cuerpo.linea { padding: 6px 12px; cursor: pointer; }   /* 4px menos de alto (antes 8px arriba y abajo) */
+  .listado .linea h2 { flex: 1; min-width: 0; margin: 0; font-size: 1em; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .listado .linea:hover { border-color: var(--enlace); }
+  /* listado en filas (ESTILO_LISTADO 'filas'): sin tarjetas, una fila por ficha separada por una línea
+     fina; tres columnas alineadas (subgrid): fecha suave, nombre, lugar suave a la derecha */
+  .listado.filas { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0; border-top: 1px solid var(--borde); }
+  .listado .fila { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; column-gap: 16px; align-items: baseline;
+                   padding: 7px 10px; border-bottom: 1px solid var(--borde); border-left: 2px solid transparent; cursor: pointer; }
+  .listado .fila:hover { background: rgba(255, 255, 255, .04); }
+  .listado .fila.abierta { background: var(--acento); color: #000; }   /* la de la ficha abierta: el color de la fecha elegida (--acento) */
+  .listado .fila.abierta .fFecha, .listado .fila.abierta .fLugar { color: #5c4a38; }
+  .listado .fila.encontrado { outline: 0; border-left-color: var(--enlace); }   /* la buscada */
+  .fila span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fila .fFecha, .fila .fLugar { color: var(--suave); font-size: .85em; font-variant-numeric: tabular-nums; }
+  .fila .fNombre { font-weight: 500; }
+  .fila .fLugar { text-align: right; max-width: 18em; }
+  @media (max-width: 600px) {   /* el lugar, debajo del nombre */
+    .listado.filas { grid-template-columns: auto minmax(0, 1fr); }
+    .fila .fLugar { grid-column: 2; text-align: left; max-width: none; }
+  }
+  /* panel del mapa, bajo la barra (tras el de fechas). z-index 0: las capas de Leaflet no tapan la barra fija */
+  .mapaCaja { position: relative; z-index: 0; }   /* del ancho de la cabecera */
+  .mapaCaja.cerrado { display: none; }             /* cerrado: nada (el botón map está en la primera línea) */
+  .mapa { height: 224px; max-height: 32vh; border: 1px solid var(--borde); border-radius: 6px; }   /* fijo arriba: que deje sitio al listado */
+  .linea1 #bMapa, .linea1 #bListado { font-size: 1em; padding: 4px 6px; width: 4.8em; box-sizing: border-box; text-align: center; }   /* en la primera línea, del alto de los selectores; los dos, del mismo ancho */
+  .iParrilla { position: relative; top: -2px; }   /* el icono de parrilla (▦), 2px más arriba: alineado con el texto */
+  @media (max-width: 600px) { .mapa { height: 160px; } }
+  .aviso { color: var(--suave); }
   .oculto { display: none; }
   #fCerrar { position: absolute; top: 6px; right: 8px; border: 0; background: none; color: var(--suave); font-size: 1.3em; cursor: pointer; }
   #fCerrar:hover { color: var(--texto); }
+  /* detalle: la ficha abierta (click en la parrilla, el listado o el mapa), bajo el mapa */
+  .detalle { position: relative; max-width: 640px; box-sizing: border-box; margin: 0 auto 16px; padding: 16px; background: var(--barra);   /* del ancho del listado */
+             border: 1px solid var(--borde); border-radius: 8px; }
+  /* fija bajo la barra (--altoBarra, lo que mide .filtros): el listado se desplaza por debajo. La sombra,
+     del color del fondo, tapa el hueco de debajo (margin) para que no se vean pasar las filas */
+  .detalle { position: sticky; top: var(--altoBarra, 0px); z-index: 1; max-height: 60vh; overflow-y: auto;
+             box-shadow: 0 16px 0 var(--fondo); }
+  .detalle .texto { padding-right: 28px; }   /* sitio para la × de cerrar */
+  #dCerrar { position: absolute; top: 6px; right: 8px; border: 0; background: none; color: var(--acento); font-size: 1.3em; font-weight: 700; cursor: pointer; }   /* la × gruesa, del color de la fila abierta del listado */
+  #dCerrar:hover { color: #ffc890; }   /* como el hover del zoom */
+  /* detalle con ESTILO_LISTADO 'filas': como su fila del listado, sin tarjeta; líneas finas arriba y
+     abajo, el nombre en 500 y lugar y fecha en tono suave */
+  .detalle.filas { background: var(--fondo); border: 0; border-radius: 0; border-top: 1px solid var(--borde);
+                   border-bottom: 1px solid var(--borde); padding: 14px 10px; }
+  .detalle.filas h2 { font-weight: 500; font-size: 1.05em; }
+  .detalle.filas h2 .hLugar { color: var(--suave); font-size: .8em; font-weight: 400; margin-left: 10px; }
+  .detalle.filas p { color: var(--suave); }
+  .detalle.filas p.fFecha { font-variant-numeric: tabular-nums; margin-top: 0; }
+  .detalle.filas .cuerpo a { font-weight: 500; }
+  .detalle.filas .cuerpo > img { border-radius: 3px; }
 </style>
 </head>
 <body>
 <div class="filtros">
-  <a id="info" href="#" title="KoKo Tango"><img src="img/koko.svg" alt="KoKo Tango"></a>
-  <span class="busca"><input id="buscar" type="search" placeholder="search" autocomplete="off"><div id="sugs" class="oculto"></div></span>
-  <label><select id="selArea" data-inicial="Asia"></select></label>
-  <label><select id="selPais"></select></label>   <!-- países del área elegida -->
-  <label><select id="selRol" data-inicial="org"></select></label>
-  <label><input type="checkbox" id="chkListado"> list</label>
+ <div class="cabecera">   <!-- la parte fija, centrada: tan ancha como su línea más larga -->
+  <div class="linea1">   <!-- primera línea: info, buscador, selectores, list y map -->
+    <a id="info" href="#" title="KoKo Tango"><img src="img/koko.svg" alt="KoKo Tango"></a>
+    <span class="busca"><input id="buscar" type="search" placeholder="search" autocomplete="off"><div id="sugs" class="oculto"></div></span>
+    <label><select id="selArea" data-inicial="Asia"></select></label>
+    <label><select id="selRol" data-inicial="evt"></select></label>
+    <button id="bListado" title="grid / list">list</button>
+    <button id="bMapa" title="show / hide the map">map</button>
+  </div>
+  <div id="mapaCaja" class="mapaCaja oculto">   <!-- segunda línea, el panel del mapa, del ancho de las líneas: lo que sale abajo, por lugar (el botón map, en la primera línea) -->
+    <div id="mapa" class="mapa"></div>
+  </div>
+  <div id="mapaAviso" class="aviso oculto"></div>   <!-- si el mapa falla, por qué -->
+  <div id="fechas" class="fechas oculto">   <!-- tercera línea, el panel de fechas: solo con los roles de eventos -->
+    <div id="fBotones"></div>
+  </div>
+ </div>
 </div>
+<div id="detalle" class="detalle oculto"><button id="dCerrar" title="close">&times;</button><div id="dCuerpo" class="cuerpo"></div></div>
 <div id="parrilla" class="parrilla"></div>
 <div id="listado" class="listado oculto"></div>
 <dialog id="ficha"><button id="fCerrar" title="close">&times;</button><div id="fCuerpo" class="cuerpo"></div></dialog>
@@ -93,11 +216,15 @@
 <script>
 const FOTOS = 'foto';      // + carpeta (0 a mano, 1 perfil, 2 portada, 9 dudosas) + '/'
 const TODOS = '*';
+const ESTILO_LISTADO = 'filas';               // listado: 'filas' (tres columnas, sin tarjetas) o 'lineas' (tarjetas: fecha - nombre - lugar)
 const EVT = 'evt';                           // opción del selector de rol: eventos (publicEvent), no personas
 const SEM = 'sem';                           // opción del selector de rol: seminarios (eventos de tipo seminar), aparte de evt
-const ACA = 'aca';                           // opción del selector de rol: academias (tipo venue academy, sin fecha), aparte de evt
-const deEventos = r => r == EVT || r == SEM || r == ACA;  // opciones del selector que son eventos
-const rolEvento = t => String(t).indexOf('seminar') != -1 ? SEM : String(t).indexOf('academy') != -1 ? ACA : EVT;
+const ACA = 'aca';                           // opción del selector de rol: academias (tipo academy, sin fecha; su local, loc: -> un venue), aparte de evt
+const MIL = 'mil';                           // opción del selector de rol: milongas (tipo milonga, regulares: REG; su local, loc: -> un venue)
+const deEventos = r => r == EVT || r == SEM || r == ACA || r == MIL;  // opciones del selector que son eventos
+const sinFecha = r => r == ACA || r == MIL;                           // sin fecha EVT: ni panel de fechas ni filtro
+const rolEvento = t => String(t).indexOf('seminar') != -1 ? SEM : String(t).indexOf('academy') != -1 ? ACA
+                     : String(t).split(' ')[0] == 'milonga' ? MIL : EVT;
 const PEO = 'peo';                           // opción del selector de rol: todas las personas (sin eventos)
 const LIS = 'lis';                           // opción del selector de rol: list (fuentes de información, tipo list de publicEvent)
 const MUNDIAL = 'World';                     // área de las list mundiales (país world, ciudad *world): salen en todas las áreas
@@ -108,6 +235,37 @@ const $ = id => document.getElementById(id);
 function foto(idfoto, evento){
   const f = fotoDeId(idfoto, evento);    // aux.js
   return f ? FOTOS + f.carpeta + '/' + f.fichero : '';
+}
+
+// posición en el mapa [lat, lon] de una fila: su lat/lon (varios) o, sin ellos,
+// el centro de su ciudad (CIUDADES_COORD de data/ciudades.js); null si no hay
+const coordCiudad = r => (typeof CIUDADES_COORD == 'undefined' ? null
+                          : CIUDADES_COORD[String(r[CAMPO.country]).trim() + '|' + String(r[CAMPO.city]).trim()]) || null;
+function coordDe(r){
+  const v = leeVarios(r), la = parseFloat((v.lat || [])[0]), lo = parseFloat((v.lon || [])[0]);
+  return !isNaN(la) && !isNaN(lo) ? [la, lo] : coordCiudad(r);
+}
+// venue de un evento o una academia con loc (una academia, como una milonga, enlaza a su
+// local): el de su ciudad que se llama igual; null si no tiene
+let _venues = null;
+function venueDe(e){
+  const loc = (leeVarios(e).loc || [])[0];
+  if (!loc) return null;
+  _venues = _venues || new Map((typeof publicEvent == 'undefined' ? [] : publicEvent).filter(x => x[CAMPO.tiporol] == 'venue')
+                                 .map(x => [x[CAMPO.country] + '|' + x[CAMPO.city] + '|' + x[CAMPO.name], x]));
+  return _venues.get(e[CAMPO.country] + '|' + e[CAMPO.city] + '|' + loc) || null;
+}
+// posición de un evento o una academia: la suya o la de su venue (donde va la ubicación)
+function posEvento(e){
+  const v = leeVarios(e), la = parseFloat((v.lat || [])[0]), lo = parseFloat((v.lon || [])[0]);
+  if (!isNaN(la) && !isNaN(lo)) return [la, lo];
+  const venue = venueDe(e);
+  return venue ? coordDe(venue) : coordCiudad(e);
+}
+// foto de un evento o una academia: la suya o, sin ella, la de su venue
+function fotoEvento(e){
+  const venue = venueDe(e);
+  return foto(e[CAMPO.idfoto], true) || (venue ? foto(venue[CAMPO.idfoto], true) : '');
 }
 
 // Filas: [area, pais, ciudad, roles, nombre, públicos (#), comentario privado, url, idfoto].
@@ -130,11 +288,14 @@ function cargaFilas(filas){
     const area  = c[CAMPO.area] && c[CAMPO.area] != '-' ? c[CAMPO.area] : '-';
     const pais  = c[CAMPO.country] && c[CAMPO.country] != '-' ? c[CAMPO.country] : '-';
     const lugar = [c[CAMPO.city], c[CAMPO.country]].filter(x => x && x != '-').join(', ');   // "ciudad, país" (para el listado)
+    const ciudad = c[CAMPO.city] && c[CAMPO.city] != '-' ? String(c[CAMPO.city]).trim() : '';
     const roles = String(c[CAMPO.tiporol] || '').split(',').map(r => r.trim()).map(r => ROLES_EQUIVALENCIAS[r] || r).filter(r => ROLES[r]);
     const video = (v.vid || [''])[0];
     const p = porClave.get(clave);
-    if (!p){ porClave.set(clave, {area, pais, lugar, roles, nombre: c[CAMPO.name], video, foto: f, fb, notas: notas ? [notas] : [],
+    const pos = coordDe(c);
+    if (!p){ porClave.set(clave, {area, pais, lugar, ciudad, pos, roles, nombre: c[CAMPO.name], video, foto: f, fb, notas: notas ? [notas] : [],
                                      coment: coments}); continue; }
+    if (!p.pos) p.pos = pos;
     if (!p.fb) p.fb = fb;
     for (const t of coments) if (!p.coment.includes(t)) p.coment.push(t);
     if (notas && !p.notas.some(n => n.includes(notas))){
@@ -144,11 +305,13 @@ function cargaFilas(filas){
     if (p.area == '-') p.area = area;
     if (p.pais == '-') p.pais = pais;
     if (!p.lugar) p.lugar = lugar;
+    if (!p.ciudad) p.ciudad = ciudad;
     if (!p.video) p.video = video;
     for (const r of roles) if (!p.roles.includes(r)) p.roles.push(r);
   }
   personas = [...porClave.values(), ...eventos(), ...listas()];
   personas.forEach((p, i) => p.id = i);
+  fotosDeLista(porClave);
   sugerencias();
   pinta();
 }
@@ -157,7 +320,7 @@ function cargaFilas(filas){
 // evento: se juntan las de la misma url o www (sin http, www, mayúsculas ni / final) y
 // día de inicio (±1 día), o del mismo nombre (solo letras y números) y día de inicio (±1); la que se queda completa con
 // la otra foto, url y organizadores. Los de tipo seminar van a la opción sem, no a evt
-// (como esSeminar de index.htm). Fecha EVT.<mes>.<MES>.<días>.<año> -> '4-8 FEB 2027'.
+// (como esSeminar de index.htm). Fecha EVT.<mes>.<MES>.<días>.<año> -> '2027.FEB.4-8'.
 const claveNom = (n, f) => String(n).toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') + '#' + f;
 // día de inicio de EVT.<mes>.<MES>.<días>.<año> como nº de día (el día de fin no cuenta); null sin fecha EVT
 // varios (campo 6, leeVarios de aux.js): los org y la primera www (web que no es de Facebook)
@@ -170,7 +333,7 @@ const inicio = d => {
 function eventos(){
   const porClave = new Map(), lista = [];
   for (const e of (typeof publicEvent == 'undefined' ? [] : publicEvent)){
-    if (!String(e[CAMPO.tiporol]).startsWith('event') && rolEvento(e[CAMPO.tiporol]) != ACA) continue;   // eventos y academias
+    if (!String(e[CAMPO.tiporol]).startsWith('event') && !sinFecha(rolEvento(e[CAMPO.tiporol]))) continue;   // eventos, academias y milongas
     const url = /^https?:\/\//.test(e[CAMPO.urlfb] || '') ? e[CAMPO.urlfb] : '';
     // misma url y día de inicio (una web puede llevar varios eventos), o mismo nombre y
     // día de inicio (solo con fecha); el día de inicio, con ±1 día de margen
@@ -180,7 +343,8 @@ function eventos(){
     if (ya){
       // repetido: completa lo que le falte
       if (!ya.fb && url) ya.fb = url;
-      if (!ya.foto) ya.foto = foto(e[CAMPO.idfoto], true);
+      if (!ya.foto) ya.foto = fotoEvento(e);
+      if (!ya.pos) ya.pos = posEvento(e);
       const orgs = orgsDe(e);
       for (const o of orgs) if (!ya.orgs.includes(o)) ya.orgs.push(o);
       if (wwwDe(e) && !ya.www.includes(wwwDe(e))) ya.www.push(wwwDe(e));
@@ -188,13 +352,15 @@ function eventos(){
       continue;
     }
     const f = fechaDe(e).split('.');
-    const fecha = f[0] == 'EVT' ? [f[3], f[2], f[4]].filter(Boolean).join(' ') : '';
+    const fecha = f[0] == 'EVT' ? [f[4], f[2], f[3]].filter(Boolean).join('.') : f[0] == 'REG' ? textoReg(fechaDe(e)) : '';   // milonga: 'wed 1930-2400'
     const orden = f[0] == 'EVT' ? (parseInt(f[4]) || 9999) * 100 + (parseInt(f[1]) || 0) : 999999;
     const mes = f[0] == 'EVT' ? parseInt(f[1]) : NaN, dia = parseInt(f[3]) || 1;   // día sin fijar ('?'): el 1
     const orgs = orgsDe(e);
-    const ev = {evento: true, area: e[CAMPO.area] && e[CAMPO.area] != '-' ? e[CAMPO.area] : '-', pais: e[CAMPO.country] && e[CAMPO.country] != '-' ? e[CAMPO.country] : '-', roles: [rolEvento(e[CAMPO.tiporol])], nombre: e[CAMPO.name], foto: foto(e[CAMPO.idfoto], true),
-                         fb: url, tipo: String(e[CAMPO.tiporol]).replace(/^event\s*/, '') || 'event',
-                         lugar: [e[CAMPO.city], e[CAMPO.country]].filter(x => x && x != '-').join(', '), fecha, orden, mes, dia, orgs, www: wwwDe(e) ? [wwwDe(e)] : [],
+    const ev = {evento: true, area: e[CAMPO.area] && e[CAMPO.area] != '-' ? e[CAMPO.area] : '-', pais: e[CAMPO.country] && e[CAMPO.country] != '-' ? e[CAMPO.country] : '-', roles: [rolEvento(e[CAMPO.tiporol])], nombre: e[CAMPO.name], foto: fotoEvento(e),
+                         fb: url, tipo: String(e[CAMPO.tiporol]).replace(/^event\s*/, '') || 'event', pos: posEvento(e),
+                         ciudad: e[CAMPO.city] && e[CAMPO.city] != '-' ? String(e[CAMPO.city]).trim() : '',
+                         lugar: [(leeVarios(e).loc || [])[0], e[CAMPO.city], e[CAMPO.country]].filter(x => x && x != '-').join(', '),   // con su local (milonga, academia)
+                         sala: (leeVarios(e).loc || [''])[0], fecha, orden, mes, dia, orgs, www: wwwDe(e) ? [wwwDe(e)] : [],
                          video: '', notas: [], coment: []};
     for (const k of claves(0)) porClave.set(k, ev);
     lista.push(ev);
@@ -202,17 +368,63 @@ function eventos(){
   return lista;
 }
 
-// List (opción list): las filas de publicEvent.out.js de tipo list; solo nombre y url
+// Fotos de las list. Con el usuario entre paréntesis al final del nombre ("... (Beto Kim)"): la foto del
+// perfil de esa persona, antes que la suya (su nombre, igual o seguido de " (...)": "Beto Kim (땅고지기)")
+// logos de los sitios de las list sin foto: hoy-milonga (sus páginas piden iniciar sesión:
+// no se bajan), faitango, WeChat y tangomarathons (sus páginas no tienen foto; la de
+// tangomarathons, su favicon grande)
+const LOGOS = [[/hoy-milonga\.com/, 'img/hoymilonga.svg'], [/faitango\.it/, 'img/faitango.png'],
+               [/mp\.weixin\.qq\.com/, 'img/wechat.png'], [/tangomarathons\.com/, 'img/tangomarathons.png']];
+function fotosDeLista(porClave){
+  const conFoto = [...porClave.values()].filter(p => p.foto);
+  for (const l of personas.filter(p => p.lista)){
+    const autor = (l.nombre.match(/\(([^()]+)\)\s*$/) || [])[1];
+    const p = autor && conFoto.find(p => p.nombre == autor || p.nombre.startsWith(autor + ' ('));
+    if (p) l.foto = p.foto;
+    // sin foto, el logo de su sitio (LOGOS), si lo hay
+    const logo = !l.foto && LOGOS.find(([re]) => re.test(l.fb));
+    if (logo){ l.foto = logo[1]; l.logo = true; }
+  }
+}
+
+// List (opción list): las filas de publicEvent.out.js de tipo list; nombre, url, foto (como la portada de un evento)
+// y posición (para el mapa, posLista).
+// La url, la del campo url o, sin ella, la primera www: de varios (donde la traen las list)
+// centro [lat, lon] de un país (PAISES_GEO de data/paises.js): el del recuadro de su polígono
+// más grande (Francia, sin sus islas lejanas); null si no está
+function centroPais(pais){
+  if (typeof PAISES_GEO == 'undefined') return null;
+  const f = PAISES_GEO.features.find(f => f.properties.nombres.includes(pais));
+  if (!f) return null;
+  const polis = f.geometry.type == 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+  const cajas = polis.map(p => { const xs = p[0].map(c => c[0]), ys = p[0].map(c => c[1]);
+                                 return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; });
+  const [x0, y0, x1, y1] = cajas.reduce((m, c) => (c[2] - c[0]) * (c[3] - c[1]) > (m[2] - m[0]) * (m[3] - m[1]) ? c : m);
+  return [(y0 + y1) / 2, (x0 + x1) / 2];
+}
+// lugar (para el listado): "ciudad, país"; las de toda un área (ciudad *world, *europe), solo el
+// área: World, Europe
+const lugarLista = e => deZona(e) ? e[CAMPO.area]
+                      : [e[CAMPO.city], e[CAMPO.country]].filter(x => x && x != '-').join(', ');
+// las de toda un área (ciudad *world, *europe...): en el mapa, un cuadrado
+const deZona = e => String(e[CAMPO.city]).startsWith('*');
+// posición en el mapa: la de su ciudad o, sin ella, el centro de su país; las de un
+// continente, el centro de su vista (VISTA_AREA); las de World, 0,0
+function posLista(e){
+  if (e[CAMPO.area] == MUNDIAL) return [0, 0];
+  const v = VISTA_AREA[e[CAMPO.area]];
+  if (deZona(e) && v) return [(v[0][0] + v[1][0]) / 2, (v[0][1] + v[1][1]) / 2];
+  return coordDe(e) || centroPais(e[CAMPO.country]);
+}
+const urlLista = e => [e[CAMPO.urlfb], ...(leeVarios(e).www || [])].find(u => /^https?:\/\//.test(u || '')) || '';
 function listas(){
   return (typeof publicEvent == 'undefined' ? [] : publicEvent).filter(e => e[CAMPO.tiporol] == 'list').map(e => ({
-    lista: true, area: e[CAMPO.area] && e[CAMPO.area] != '-' ? e[CAMPO.area] : '-', pais: e[CAMPO.country] && e[CAMPO.country] != '-' ? e[CAMPO.country] : '-', roles: [LIS], nombre: e[CAMPO.name],
-    fb: /^https?:\/\//.test(e[CAMPO.urlfb] || '') ? e[CAMPO.urlfb] : '', lugar: [e[CAMPO.city], e[CAMPO.country]].filter(x => x && x != '-').join(', '),
-    foto: '', video: '', notas: [], coment: []}));
+    lista: true, area: e[CAMPO.area] && e[CAMPO.area] != '-' ? e[CAMPO.area] : '-', pais: e[CAMPO.country] && e[CAMPO.country] != '-' ? e[CAMPO.country] : '-', roles: [LIS], nombre: e[CAMPO.name], pos: posLista(e), zona: deZona(e),
+    fb: urlLista(e), lugar: lugarLista(e),
+    foto: foto(e[CAMPO.idfoto], true), video: '', notas: [], coment: []}));
 }
 
 const enArea = (p, a) => a == TODOS || p.area == a || p.area == MUNDIAL;
-// país: las list sin país (de un área o mundiales) salen en todos los países
-const enPais = (p, pa) => pa == TODOS || p.pais == pa || (p.lista && p.pais == '-');
 const enRol  = (p, r) => r == LIS ? !!p.lista                             // 'list': solo las list
                        : p.lista ? false                                  // las list no salen en las demás
                        : r == TODOS ? true                                 // 'all': personas y eventos
@@ -220,15 +432,16 @@ const enRol  = (p, r) => r == LIS ? !!p.lista                             // 'li
                        : deEventos(r) ? !!p.evento && p.roles.includes(r)
                        : !p.evento && p.roles.includes(r);
 
-function opciones(sel, valores, etiqueta, cuenta){
+function opciones(sel, valores, etiqueta, cuenta, todos = 'all'){
   // Rellena un selector con "etiqueta (n)"; conserva la opción elegida (al cargar, la de data-inicial).
+  // todos: el nombre de la opción de todo (TODOS)
   const actual = sel.value || sel.dataset.inicial || TODOS;
   sel.innerHTML = '';
   // valores: lista de valores o de grupos {grupo, valores} (cada grupo, en su <optgroup>)
   const opcion = (dentro, v) => {
     const o = document.createElement('option');
     o.value = v;
-    o.textContent = (v == TODOS ? 'all' : etiqueta(v)) + ' (' + cuenta(v) + ')';
+    o.textContent = (v == TODOS ? todos : etiqueta(v)) + (cuenta ? ' (' + cuenta(v) + ')' : '');   // sin cuenta: solo el nombre
     dentro.appendChild(o);
   };
   opcion(sel, TODOS);
@@ -258,6 +471,9 @@ function organizadores(){
 }
 const organiza = organizadores();
 
+// icono de un enlace: el de user (img/perfil.svg) si es de Facebook (y de texto, 'facebook'); si no, el globo
+const esFb = u => /^https?:\/\/([a-z]+\.)?(facebook\.com|fb\.com|fb\.me)\//i.test(u);
+const iconoUrl = u => esFb(u) ? 'img/perfil.svg' : 'img/web.svg';
 function enlace(href, texto, icono){
   // enlace en pestaña nueva; con icono (img/...) delante del texto si se indica
   const a = document.createElement('a');
@@ -277,13 +493,28 @@ function cara(p){
   img.alt = p.nombre;
   img.loading = 'lazy';
   if (!p.foto) img.className = 'sinfoto';
+  if (p.logo) img.className = 'logo';
   return img;
 }
 
-function titulo(d, p, conLugar){
-  // h2 con el nombre; en el listado (conLugar), detrás " - ciudad, país"
+// fecha sin el año, para el listado: 'año.MES.días' -> 'MES.días' (la ficha la lleva entera)
+const fechaListado = p => (p.fecha || '').replace(/^\d{4}\./, '');
+
+function titulo(d, p, conLugar, fechaAparte){
+  // h2 con el nombre; en el listado y el detalle (conLugar), en los eventos la
+  // fecha delante ("fecha - ", salvo fechaAparte: el detalle la pone en la segunda línea)
+  // y detrás " - ciudad, país"
   const h = document.createElement('h2');
-  h.textContent = p.nombre + (conLugar && p.lugar ? ' - ' + p.lugar : '');
+  if (conLugar && ESTILO_LISTADO == 'filas'){
+    // detalle en filas: el nombre y, aparte y en tono suave, el lugar
+    h.textContent = p.nombre;
+    if (p.lugar){
+      const s = document.createElement('span');
+      s.className = 'hLugar';
+      s.textContent = p.lugar;
+      h.appendChild(s);
+    }
+  } else h.textContent = (conLugar ? [fechaAparte ? '' : fechaListado(p), p.nombre, p.lugar] : [p.nombre]).filter(Boolean).join(' - ');
   d.appendChild(h);
 }
 
@@ -296,11 +527,12 @@ function rellenaEvento(c, p, conLugar){
   const d = document.createElement('div');
   d.className = 'texto';
   c.appendChild(d);
-  titulo(d, p, conLugar);
-  for (const texto of [conLugar ? '' : p.lugar, p.fecha]){
+  titulo(d, p, conLugar, true);
+  for (const texto of conLugar ? [p.fecha] : [p.lugar, p.fecha]){   // con conLugar (detalle), el lugar ya en el título; la fecha, segunda línea sin negrita
     if (!texto) continue;
     const par = document.createElement('p');
     par.textContent = texto;
+    if (conLugar) par.className = 'fFecha';   // en el detalle, solo la fecha
     d.appendChild(par);
   }
   if (p.orgs.length){
@@ -314,11 +546,13 @@ function rellenaEvento(c, p, conLugar){
     });
     d.appendChild(par);
   }
-  // el tipo (festival, encuentro...): enlace al evento con el globo (el icono de user es para personas); sin url, solo el texto
+  // el tipo (festival, encuentro...): enlace al evento con su icono (iconoUrl: user si es de
+  // Facebook, globo si no); de Facebook, el tipo de texto y el enlace 'facebook'; sin url, solo el texto
   const par = document.createElement('p');
   par.className = 'enlaces';
-  par.appendChild(p.fb ? enlace(p.fb, p.tipo, 'img/web.svg')
-                       : document.createTextNode(p.tipo));
+  if (p.fb && esFb(p.fb)) par.append(document.createTextNode(p.tipo), enlace(p.fb, 'facebook', iconoUrl(p.fb)));
+  else par.appendChild(p.fb ? enlace(p.fb, p.tipo, iconoUrl(p.fb))
+                            : document.createTextNode(p.tipo));
   // www (varios): por su dominio, en la misma línea
   for (const u of p.www) par.appendChild(enlace(u, u.replace(/^https?:\/\/(www\.)?/, '').split('/')[0], 'img/web.svg'));
   d.appendChild(par);
@@ -384,7 +618,11 @@ function rellenaPersona(c, p, conLugar){
 }
 
 function rellenaLista(c, p){
-  // list: solo el nombre y la url (de texto, la url sin http ni www)
+  // list: la imagen a la izquierda (como la portada de un evento), el nombre y la url
+  // (de texto, la url sin http ni www; de Facebook, 'facebook')
+  const img = cara(p);
+  if (p.foto) img.className = p.logo ? 'portada logo' : 'portada';
+  c.appendChild(img);
   const d = document.createElement('div');
   d.className = 'texto';
   c.appendChild(d);
@@ -392,18 +630,40 @@ function rellenaLista(c, p){
   if (!p.fb) return;
   const par = document.createElement('p');
   par.className = 'enlaces';
-  par.appendChild(enlace(p.fb, p.fb.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''), 'img/web.svg'));
+  par.appendChild(enlace(p.fb, esFb(p.fb) ? 'facebook' : p.fb.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''), iconoUrl(p.fb)));
   d.appendChild(par);
 }
 
 function rellena(c, p, conLugar){ (p.lista ? rellenaLista : p.evento ? rellenaEvento : rellenaPersona)(c, p, conLugar); }
 
-function abreFicha(p){
-  // la ficha en el diálogo
-  $('fCuerpo').innerHTML = '';
-  rellena($('fCuerpo'), p);
-  $('ficha').showModal();
+// la ficha abierta en el detalle: su fila del listado, marcada
+let fichaAbierta = null;
+function marcaAbierta(){
+  for (const f of document.querySelectorAll('.fila.abierta')) f.classList.remove('abierta');
+  const f = fichaAbierta && document.getElementById('f' + fichaAbierta.id);
+  if (f && f.classList.contains('fila')) f.classList.add('abierta');
 }
+function abreFicha(p){
+  // la ficha en el panel de detalle, bajo el mapa, a la vista (bajo la barra fija)
+  fichaAbierta = p;
+  marcaAbierta();
+  $('dCuerpo').innerHTML = '';
+  rellena($('dCuerpo'), p, true);                // título: nombre - lugar; la fecha, en la segunda línea
+  iluminaFicha(p);                               // su marcador, iluminado (el mapa no se mueve)
+  const d = $('detalle');
+  d.classList.toggle('filas', ESTILO_LISTADO == 'filas');
+  d.classList.remove('oculto');
+  // fija (sticky) bajo la barra: no hace falta desplazarse para verla; solo, si tapa la fila
+  // clicada del listado, bajar lo justo para que la fila quede debajo de la ficha
+  const f = document.getElementById('f' + p.id);
+  if (f && f.classList.contains('fila')){
+    const tapa = d.getBoundingClientRect().bottom + 16 - f.getBoundingClientRect().top;
+    if (tapa > 0) window.scrollBy({top: -tapa, behavior: 'smooth'});
+  }
+}
+// --altoBarra: lo que mide la barra fija (cambia al abrir o cerrar el mapa, con la ventana...)
+new ResizeObserver(() => document.documentElement.style.setProperty('--altoBarra', document.querySelector('.filtros').offsetHeight + 'px'))
+  .observe(document.querySelector('.filtros'));
 
 // días desde hoy hasta el día y mes del evento, sin contar el año (lo de antes
 // de hoy va al final, como del año que viene); sin fecha, al final del todo
@@ -413,62 +673,432 @@ function desdeHoy(p){
   return (n(p.mes, p.dia) - n(hoy.getMonth(), hoy.getDate()) + 372) % 372;
 }
 
+// Panel de fechas (roles de eventos): el año actual, YEAR, los 12 meses desde el
+// actual (oct 2026 ... sep 2027) y el año siguiente. El botón con el foco (fechaSel,
+// posición en FECHAS) filtra los eventos de ese año, de ese mes o, YEAR (el de inicio),
+// de esos 12 meses. Sin foco (null: no es de eventos, o una sugerencia elegida), todos.
+const HOY = new Date(), ANYO = HOY.getFullYear();
+const MESES = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+const DOCE = MESES.map((m, k) => { const d = new Date(ANYO, HOY.getMonth() + k, 1); return {anyo: d.getFullYear(), mes: d.getMonth()}; });
+const ordenDe = f => f.anyo * 100 + f.mes;
+const FECHAS = [{anyo: ANYO}, {doce: true}, ...DOCE, {anyo: ANYO + 1}];
+const F_DOCE = 1;                                 // YEAR, el de inicio
+let fechaSel = F_DOCE;
+const anyoDe = p => Math.floor(p.orden / 100);   // orden: año * 100 + mes (sin fecha, 9999)
+const enFecha = (p, i) => i === null || !p.evento || sinFecha(p.roles[0]) ||   // las academias y las milongas, sin fecha EVT: siempre
+                          (FECHAS[i].doce ? p.orden >= ordenDe(DOCE[0]) && p.orden <= ordenDe(DOCE[11])
+                                          : anyoDe(p) == FECHAS[i].anyo && (FECHAS[i].mes === undefined || p.mes == FECHAS[i].mes));
+function pintaFechas(cuenta){
+  // los botones: el nombre y, debajo, cuántos salen en el listado con él (cuenta(i));
+  // el del foco, a la vista
+  const div = $('fBotones');
+  div.innerHTML = '';
+  FECHAS.forEach((f, i) => {
+    const b = document.createElement('button');
+    b.textContent = f.doce ? 'YEAR' : f.mes === undefined ? f.anyo : MESES[f.mes];
+    if (f.mes !== undefined) b.title = MESES[f.mes] + ' ' + f.anyo;   // los del año siguiente, sin confundirlos
+    const n = document.createElement('small');
+    n.textContent = cuenta(i);
+    b.appendChild(n);
+    b.classList.toggle('activo', i == fechaSel);
+    b.onclick = () => { fechaSel = i; lugarSel = ciudadSel = null; soloBuscado = false; pinta(); };   // el país clicado se queda
+    div.appendChild(b);
+  });
+  div.children[fechaSel].scrollIntoView({block: 'nearest', inline: 'nearest'});
+}
+
+// Panel del mapa (Leaflet, teselas de Esri): lo que sale en la
+// parrilla o el listado, un círculo por lugar (más grande cuantos más hay);
+// el click en uno deja (en la parrilla o el listado, el que esté) solo lo de
+// ese lugar (lugarSel; otro click en él, o cambiar área, rol o fecha, lo
+// quita) y el mapa no se mueve. Sin nada con posición, el panel no sale.
+// Países (PAISES_GEO de data/paises.js): con un área elegida en el selector,
+// sus países iluminados y el mapa encuadrado en sus marcadores; el click en un país lo
+// ilumina, lo encuadra y deja (en la parrilla o el listado, el que esté) solo lo suyo (otro click en él, o
+// cambiar área o rol, lo quita; la fecha y list no); sin nada, los marcadores de lo que sale
+let mapa = null, capaMapa = null, capaPaises = null, paisSel = null, areaMapa = null, posMapa = [];   // posMapa: lo que sale, con posición
+// marcadores: 'lat,lon' -> su círculo; marcaFicha: el de la ficha abierta (iluminado, sin mover el mapa)
+const marcadores = new Map();
+let marcaFicha = null;
+// etiqueta con el nombre del país o la ciudad clicados (fija, no al pasar el ratón);
+// etiquetaDe: de cuál es ('pais' o 'lugar'), para quitarla cuando se quite su selección
+let tipMapa = null, etiquetaDe = null;
+function etiqueta(latlng, texto, de){
+  if (!tipMapa) tipMapa = L.tooltip({permanent: true, direction: 'top', offset: [0, -8]});
+  tipMapa.setLatLng(latlng).setContent(texto);
+  mapa.openTooltip(tipMapa);
+  etiquetaDe = de;
+}
+function iluminaFicha(p){
+  // el marcador de p (null: ninguno) en rojo y encima de los demás; el de antes, como estaba
+  const antes = marcadores.get(marcaFicha);
+  if (antes) antes.setStyle(deCiudadSel(marcaFicha) ? ESTILO_CIUDAD     // el de la ciudad seleccionada vuelve a rojo
+                                                    : {color: BORDE_MARCA, fillColor: COLOR_MARCA, fillOpacity: 0, weight: 2});
+  marcaFicha = p && p.pos ? clavePos(p.pos) : null;
+  const m = marcadores.get(marcaFicha);
+  if (m){ m.setStyle(ESTILO_CIUDAD); m.bringToFront(); }   // en rojo, como la ciudad seleccionada
+}
+function cierraFicha(){
+  $('detalle').classList.add('oculto');
+  iluminaFicha(null);
+  fichaAbierta = null;
+  marcaAbierta();
+}
+// ciudadSel: 'País|Ciudad' de una sugerencia de ciudad (CIT): solo lo de esa ciudad
+let ciudadSel = null, porLugarMapa = new Map();   // porLugarMapa: 'lat,lon' -> los de ese marcador
+const ciudadDe = p => p.pais + '|' + (p.ciudad || '');
+let lugarSel = null, sinEncuadre = false, areaPrevia = null;   // areaPrevia: la del selector antes de clicar un país
+// mapa abierto o cerrado (botón map): al cargar, siempre abierto
+let mapaAbierto = true;
+// parrilla o listado (botón list)
+let enListado = false;
+function abreCierraMapa(){
+  mapaAbierto = !mapaAbierto;
+  if (!mapaAbierto) lugarSel = ciudadSel = paisSel = null;
+  soloBuscado = false;   // cerrado: sin filtro de lugar ni país (no se vería por qué)
+  pinta();
+}   // lugarSel: 'lat,lon' del marcador clicado; sinEncuadre: repintar sin mover el mapa
+const COLOR_MARCA = '#ffd8b0';   // marcadores: el --acento de la hoja de estilos (relleno)
+const BORDE_MARCA = '#ffd500';   // y su borde, amarillo intenso y opaco
+const COLOR_CIUDAD = '#e53935';  // los de la ciudad seleccionada (marcador clicado o sugerencia de ciudad)
+const ESTILO_CIUDAD = {color: COLOR_CIUDAD, fillColor: COLOR_CIUDAD, fillOpacity: 1, weight: 4};   // rojo opaco
+const deCiudadSel = k => k == lugarSel || (ciudadSel && (porLugarMapa.get(k) || []).some(p => ciudadDe(p) == ciudadSel));
+// países: borde blanco y relleno de un azul algo más claro que el mapa (el mar queda con el del mapa)
+// Casi todo usa el centro de su ciudad (CIUDADES_COORD): lo que tenga coordenadas
+// propias a menos de 1 km del centro de una ciudad, se cuenta como esa ciudad (mismo
+// círculo, en el centro), y no salen círculos concéntricos o pegados. centroPos: el
+// centro más cercano a menos de 1 km o, si no hay, la posición tal cual. Los centros,
+// en celdas de 0,01° (~1,1 km): se miran la celda de la posición y las de alrededor
+let _centros = null;
+function centroPos(pos){
+  if (!_centros){
+    _centros = new Map();
+    for (const c of Object.values(typeof CIUDADES_COORD == 'undefined' ? {} : CIUDADES_COORD)){
+      if (!c) continue;
+      const k = Math.round(c[0] * 100) + ',' + Math.round(c[1] * 100);
+      if (!_centros.has(k)) _centros.set(k, []);
+      _centros.get(k).push(c);
+    }
+  }
+  const la = Math.round(pos[0] * 100), lo = Math.round(pos[1] * 100), cos = Math.cos(pos[0] * Math.PI / 180);
+  let mejor = null, dMejor = 1;                  // km
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++)
+    for (const c of _centros.get((la + i) + ',' + (lo + j)) || []){
+      const d = 111.2 * Math.hypot(c[0] - pos[0], (c[1] - pos[1]) * cos);
+      if (d <= dMejor){ mejor = c; dMejor = d; }
+    }
+  return mejor || pos;
+}
+// clave del marcador de una posición: la de su centro, redondeada a 0,001° (~100 m)
+const clavePos = pos => centroPos(pos).map(x => x.toFixed(3)).join(',');
+// marcador cuadrado (las list de World o de un continente): un circleMarker (mismos
+// estilos, setStyle y click) dibujado como un cuadrado de lado 2 * radio (SVG)
+let MarcaCuadrada = null;
+function marcaCuadrada(pos, opciones){
+  MarcaCuadrada = MarcaCuadrada || L.CircleMarker.extend({_updatePath(){
+    const p = this._point, r = Math.max(Math.round(this._radius), 1);
+    this._renderer._setPath(this, this._empty() ? 'M0 0' : `M${p.x - r},${p.y - r}h${2 * r}v${2 * r}h${-2 * r}z`);
+  }});
+  return new MarcaCuadrada(pos, opciones);
+}
+// radio del marcador según cuántos hay en el lugar: [n, px], y entre medias, en línea recta
+const RADIOS = [[1, 4.5], [2, 6.75], [4, 9], [8, 11.25], [16, 13.5], [32, 15.75]];
+function radioDe(n){
+  for (let i = 1; i < RADIOS.length; i++){
+    const [n0, r0] = RADIOS[i - 1], [n1, r1] = RADIOS[i];
+    if (n <= n1) return r0 + (r1 - r0) * (n - n0) / (n1 - n0);
+  }
+  return RADIOS[RADIOS.length - 1][1];   // 32 o más
+}
+const ESTILO_PAIS = {fill: true, fillOpacity: 1, fillColor: '#22406a', weight: .6, color: '#888', opacity: 1};   // borde gris
+const ESTILO_AREA = {fill: true, fillOpacity: 1, fillColor: '#2f5a8f', weight: .6, color: '#fff', opacity: 1};   // los del área elegida, más claros y borde blanco
+const ESTILO_SEL  = {fill: true, fillOpacity: .15, fillColor: '#f5c211', weight: 2, color: '#fff', opacity: .5};   // el clicado: borde blanco al 50%
+let _paisesEv = null;
+function paisesConEventos(){
+  // países con algún evento (también seminario) de hoy a 12 meses (sin día fijo: el 1)
+  if (_paisesEv) return _paisesEv;
+  const hoy = new Date(), fin = new Date(hoy.getFullYear() + 1, hoy.getMonth(), hoy.getDate());
+  hoy.setHours(0, 0, 0, 0);
+  _paisesEv = new Set(personas.filter(p => p.evento && !isNaN(p.mes) && p.orden < 999999)
+                              .filter(p => { const d = new Date(anyoDe(p), p.mes, p.dia); return d >= hoy && d <= fin; })
+                              .map(p => p.pais));
+  return _paisesEv;
+}
+function estiloPaises(){
+  // cada país: el clicado, los del área elegida o ninguno. Solo se pueden clicar
+  // los que tienen algún evento en los próximos 12 meses (paisesConEventos), salga
+  // o no con los filtros; en los demás el click no hace nada (pointer-events: none)
+  if (!capaPaises) return;
+  const conMarcas = paisesConEventos();
+  capaPaises.eachLayer(l => {
+    const enArea = areaMapa && l.feature.properties.area == areaMapa;
+    l.setStyle(l === paisSel ? ESTILO_SEL : enArea ? ESTILO_AREA : ESTILO_PAIS);
+    if (enArea) l.bringToFront();               // sus bordes blancos, sin pisar por los grises de al lado
+    const el = l.getElement();
+    if (el) el.style.pointerEvents = l.feature.properties.nombres.some(n => conMarcas.has(n)) ? '' : 'none';
+  });
+  if (paisSel) paisSel.bringToFront();          // el clicado, encima de todos
+}
+function boundsPais(l){
+  // recuadro del país para encuadrarlo: su trozo más grande y los que tengan al
+  // menos un cuarto de su tamaño (sin islas ni territorios lejanos: Canarias,
+  // Guayana Francesa...), así el país llena el mapa
+  const partes = l.getLatLngs().map(p => L.latLngBounds(p[0]));   // MultiPolygon: [polígono][anillo]
+  const tam = b => (b.getNorth() - b.getSouth()) * (b.getEast() - b.getWest());
+  const mayor = Math.max(...partes.map(tam));
+  return partes.filter(b => tam(b) >= mayor / 4)
+               .reduce((a, b) => a ? a.extend(b) : L.latLngBounds(b.getSouthWest(), b.getNorthEast()), null);
+}
+// vista de cada área del selector, a mano: con los polígonos saldría mal (Rusia, en
+// Europe, la estiraría hasta el Pacífico)
+const VISTA_AREA = {Europe: [[34, -25], [71, 45]], Asia: [[-11, 60], [55, 150]], America: [[-56, -130], [60, -34]],
+                    Africa: [[-35, -18], [38, 52]], Oceania: [[-48, 110], [0, 180]]};
+function encuadra(conPos){
+  // ajustado a los marcadores que salen, pero nunca más cerca que sus países: el zoom
+  // máximo es el que encuadra los países (boundsPais) de esos marcadores. País clicado:
+  // sus marcadores, como mucho al zoom del país (sin ninguno, el país entero); si no,
+  // todos, como mucho al zoom de sus países juntos. Con zoomSnap fraccionario (L.map).
+  // Las list de un área entera (World en 0,0, continentes en su centro) no cuentan si hay otros
+  const locales = conPos.filter(p => !p.zona);
+  if (locales.length) conPos = locales;
+  if (paisSel){
+    const suyos = conPos.filter(p => paisSel.feature.properties.nombres.includes(p.pais));
+    const bp = boundsPais(paisSel);
+    return vuela(suyos.length ? L.latLngBounds(suyos.map(p => p.pos)) : bp, bp);
+  }
+  // área elegida en el selector: manda el selector, el área entera (y los marcadores
+  // que queden fuera), aunque solo haya marcadores en un país
+  if (areaMapa && VISTA_AREA[areaMapa]){
+    const b = L.latLngBounds(VISTA_AREA[areaMapa]);
+    for (const p of conPos) b.extend(p.pos);
+    return vuela(b, null, MAS_AREA);
+  }
+  if (!conPos.length) return;
+  const paises = new Set(conPos.map(p => p.pais));
+  let tope = null;
+  if (capaPaises) capaPaises.eachLayer(l => {
+    if (!l.feature.properties.nombres.some(n => paises.has(n))) return;
+    const bp = boundsPais(l);
+    tope = tope ? tope.extend(bp) : bp;
+  });
+  vuela(L.latLngBounds(conPos.map(p => p.pos)), tope);
+}
+const MAS_PAIS = .5;                             // zoom de más sobre el que encuadra los países (vuela)
+const MAS_AREA = .5;                             // y sobre el que encuadra el área elegida (continente)
+function vuela(b, tope, mas = 0){
+  // el cambio de zoom y posición, animado (la primera vez, sin vista aún, de golpe).
+  // Centrado en b (los marcadores): el mismo margen a los dos lados de los extremos.
+  // Zoom: el que encuadra b, como mucho el que encuadra tope (los países) más MAS_PAIS
+  // (algo más cerca: el país llena el panel aunque se corte un poco) y 10 (la ciudad y
+  // alrededores, no la calle). Margen: el del marcador más grande (que no
+  // quede cortado en el borde); arriba y abajo, además el de los botones (zoom, map)
+  const PAD = Math.ceil(RADIOS[RADIOS.length - 1][1]) + 4, VERT = PAD + 26;
+  const z = x => mapa.getBoundsZoom(x, false, L.point(2 * PAD, 2 * VERT));
+  let zoom = Math.min(z(b) + mas, 10);         // mas: zoom de más (el área elegida, MAS_AREA)
+  if (tope) zoom = Math.min(zoom, z(tope.extend(b)) + MAS_PAIS);   // (los marcadores de un país sin polígono, dentro también)
+  const centro = mapa.unproject(mapa.project(b.getNorthWest(), zoom).add(mapa.project(b.getSouthEast(), zoom)).divideBy(2), zoom);
+  if (mapa._loaded) mapa.flyTo(centro, zoom, {duration: .8});
+  else mapa.setView(centro, zoom);
+}
+function pintaMapa(lista, area){
+  // un fallo del mapa no deja sin parrilla ni listado: se avisa bajo la barra
+  $('mapaAviso').classList.add('oculto');
+  try { pintaMapa0(lista, area); }
+  catch (e){ avisoMapa('error en el mapa: ' + e.message); console.error(e); }
+  finally { sinEncuadre = false; }               // vale solo para este repintado, se pinte o no el mapa
+}
+function avisoMapa(texto){
+  $('mapaCaja').classList.add('oculto');
+  $('mapaAviso').textContent = texto;
+  $('mapaAviso').classList.remove('oculto');
+}
+function pintaMapa0(lista, area){
+  const div = $('mapa'), caja = $('mapaCaja'), conPos = posMapa = lista.filter(p => p.pos);
+  $('bMapa').textContent = (mapaAbierto ? '▴' : '▾') + ' map';   // igual abierto o cerrado; el triángulo dice el estado (▴ cierra, ▾ abre)
+  caja.classList.toggle('cerrado', !mapaAbierto);
+  div.classList.toggle('oculto', !mapaAbierto);
+  if (!mapaAbierto) return;                      // cerrado: ni se pinta (.cerrado lo oculta)
+  areaMapa = area == TODOS ? null : area;       // (elegir un área quita el país clicado: conecta)
+  if (typeof L == 'undefined') return avisoMapa('no se ha podido cargar Leaflet (wwt/leaflet/leaflet.js)');
+  caja.classList.toggle('oculto', !conPos.length);   // nada con posición: sin panel
+  if (!conPos.length) return;
+  if (!mapa){
+    mapa = L.map(div, {worldCopyJump: true, zoomSnap: .25});   // zoom en cuartos: el encuadre se ajusta más
+    mapa.attributionControl.setPrefix(false);   // sin 'Leaflet': los créditos completos, en la ficha de info (muestraInfo)
+    // teselas de Esri (gris oscuro y, encima, los nombres): gratis y sin clave. Las de
+    // tile.openstreetmap.org piden Referer (desde file:// salen bloqueadas) y las de
+    // CARTO, una clave de API
+    const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/';
+    L.tileLayer(ESRI + 'World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+                {maxZoom: 16, className: 'teselaBase', attribution: '&copy; Esri, OpenStreetMap'}).addTo(mapa);
+    // capas: teselas de fondo, países (rellenos opacos), nombres encima de ellos (sin
+    // recibir clicks) y, sobre todo, los marcadores (overlayPane, 400)
+    const paises = mapa.createPane('paises');
+    paises.style.zIndex = 250;
+    paises.style.transition = 'opacity .3s';
+    // los polígonos (1:50m, a 0,01°) se ven quebrados de cerca: desde el zoom 7 se
+    // atenúan (relleno y borde) hasta un 10% en el 9, y manda el fondo de Esri
+    const atenua = () => paises.style.opacity = Math.max(.1, Math.min(1, 1 - (mapa.getZoom() - 7) * .45));
+    mapa.on('zoomend', atenua);
+    const nombres = mapa.createPane('nombres');
+    nombres.style.zIndex = 260;
+    nombres.style.pointerEvents = 'none';
+    L.tileLayer(ESRI + 'World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {maxZoom: 16, className: 'teselaNombres', pane: 'nombres'}).addTo(mapa);
+    if (typeof PAISES_GEO != 'undefined'){
+      capaPaises = L.geoJSON(PAISES_GEO, {pane: 'paises', style: ESTILO_PAIS, onEachFeature: (f, l) => l.on('click', e => {
+        paisSel = paisSel === l ? null : l;      // otro click en el mismo: se quita
+        lugarSel = ciudadSel = null;
+        soloBuscado = false;
+        if (paisSel) etiqueta(e.latlng, f.properties.pais, 'pais');   // su nombre, donde se ha clicado
+        pinta();                                  // ilumina, encuadra y filtra (la parrilla o el listado, el que esté)
+      })}).addTo(mapa);                          // antes que los círculos: quedan debajo
+    }
+    capaMapa = L.layerGroup().addTo(mapa);
+  }
+  mapa.invalidateSize();          // estaba oculto: Leaflet recalcula el tamaño
+  capaMapa.clearLayers();
+  const porLugar = new Map();
+  for (const p of conPos){
+    const k = clavePos(p.pos);
+    if (!porLugar.has(k)) porLugar.set(k, []);
+    porLugar.get(k).push(p);
+  }
+  marcadores.clear();
+  porLugarMapa = porLugar;
+  for (const [k, ps] of porLugar){
+    // el de la ficha abierta y los de la ciudad seleccionada, en rojo opaco
+    const ciudad = deCiudadSel(k) || k == marcaFicha, color = ciudad ? COLOR_CIUDAD : COLOR_MARCA;
+    const m = (ps.some(p => p.zona) ? marcaCuadrada : L.circleMarker)(centroPos(ps[0].pos), {radius: radioDe(ps.length),
+                                         color: ciudad ? color : BORDE_MARCA, fillColor: color, opacity: 1, weight: ciudad ? 4 : 2, fillOpacity: ciudad ? 1 : 0});   // los normales, solo el borde
+    m.on('click', () => {
+      lugarSel = lugarSel == k ? null : k;           // lo del lugar, en la parrilla o el listado (el que esté)
+      ciudadSel = null;
+      soloBuscado = false;
+      // el nombre del sitio y, si son varios, cuántos: su local si todos son del mismo (milongas,
+      // academias), si no la ciudad (muchos sin coordenadas propias caen en su centro)
+      const salas = new Set(ps.map(p => p.sala || '')), sala = salas.size == 1 ? [...salas][0] : '';
+      if (lugarSel) etiqueta(centroPos(ps[0].pos), (sala || ps[0].ciudad || (ps[0].lugar || '').split(',')[0]) + (ps.length > 1 ? ' (' + ps.length + ')' : ''), 'lugar');
+      sinEncuadre = true;
+      pinta();
+    });
+    capaMapa.addLayer(m);
+    marcadores.set(k, m);
+    if (ciudad) m.bringToFront();
+  }
+  estiloPaises();
+  if (etiquetaDe && !{pais: paisSel, lugar: lugarSel, ciudad: ciudadSel}[etiquetaDe]) mapa.closeTooltip(tipMapa);   // sin selección: fuera la etiqueta
+  if (!sinEncuadre) encuadra(conPos);
+  sinEncuadre = false;
+}
+
+// imágenes por fila en la parrilla: las que quepan de ANCHO_CARA (eventos, el doble),
+// entre 4 y 8 (--cols); con solo eventos (evts), cada evento cuenta como una
+const ANCHO_CARA = 110;
+let soloEventos = false;
+function columnasParrilla(evts){
+  soloEventos = evts;
+  const div = $('parrilla'), w = div.clientWidth || window.innerWidth, ancho = evts ? 2 * ANCHO_CARA : ANCHO_CARA;
+  div.style.setProperty('--cols', Math.max(4, Math.min(8, Math.floor((w + 6) / (ancho + 6)))));
+  div.classList.toggle('evts', evts);
+}
+
+// total de registros de un área (all: de todas), para su selector; se cuenta una vez
+const totalesArea = new Map();
+function totalArea(v){
+  if (!totalesArea.has(v)) totalesArea.set(v, personas.filter(p => enArea(p, v)).length);
+  return totalesArea.get(v);
+}
+
 function pinta(){
   const val = sel => sel.value || sel.dataset.inicial || TODOS;   // al cargar aún no hay opciones: vale data-inicial
-  const a = val($('selArea')), r = val($('selRol'));
-  let pa = val($('selPais'));
-  // Solo se listan los que tienen foto, salvo los eventos en el listado (todos).
+  // con un país clicado, el área no filtra (el país puede ser de otra) y su selector
+  // queda en blanco; al quitar el país vuelve el área de antes (areaPrevia)
+  const sa = $('selArea');
+  if (paisSel){ if (sa.value) areaPrevia = sa.value; }
+  else if (areaPrevia !== null){ if (!sa.value) sa.value = areaPrevia; areaPrevia = null; }
+  const a = paisSel ? TODOS : val(sa), r = val($('selRol'));
+  const areaCuenta = paisSel ? (areaPrevia || TODOS) : a;   // contadores de tipo: con el área en blanco, los del área de antes
+  // Personas, solo las que tienen foto; eventos y list, todos.
   // Cada selector cuenta (entre paréntesis) lo que sale en el listado (personas con
   // foto, todos los eventos y las list), según lo elegido en el otro
-  const enListado = $('chkListado').checked || r == LIS;
+  $('bListado').innerHTML = (enListado ? '☰' : '<span class="iParrilla">▦</span>') + ' list';   // como map: igual siempre; el icono dice la vista (☰ listado, ▦ parrilla)
   const deListado = personas.filter(p => p.foto || p.lista || p.evento);
-  const visibles = personas.filter(p => p.foto || p.lista || (enListado && p.evento) || p === buscado);   // la buscada, aunque no tenga foto
+  // parrilla y listado, lo mismo: personas con foto, todos los eventos (sin foto, en la
+  // parrilla con la imagen dummy) y las list; la buscada, aunque no tenga foto
+  const visibles = personas.filter(p => p.foto || p.lista || p.evento || p === buscado);
   const areas = [...new Set(personas.map(p => p.area))].filter(x => x != MUNDIAL)
                   .sort((x, y) => (x == '-') - (y == '-') || x.localeCompare(y));
-  opciones($('selArea'), areas, v => v == '-' ? 'no area' : v,
-           v => deListado.filter(p => enArea(p, v) && enRol(p, r)).length);
-  // países del área elegida (dinámico: cambia con el área)
-  const paises = [...new Set(personas.filter(p => enArea(p, a) && p.pais != '-').map(p => p.pais))].sort((x, y) => x.localeCompare(y));
-  opciones($('selPais'), paises, v => v,
-           v => deListado.filter(p => enArea(p, a) && enPais(p, v) && enRol(p, r)).length);
-  pa = $('selPais').value;   // si el país no es de esta área, opciones lo ha dejado en all
-  // tras 'all', list y dos grupos: events (events, seminars, academies) y people (people, organizer, artist y el resto de roles)
-  const PRIMEROS = {[LIS]: 'list', [EVT]: 'events', [SEM]: 'seminars', [ACA]: 'academies', [PEO]: 'people', org: 'organizer', art: 'artist'};
-  opciones($('selRol'), [LIS, {grupo: 'events', valores: [EVT, SEM, ACA]},
+  // cada área, siempre su total: todos sus registros (eventos, personas y list, con
+  // foto o sin ella), sin depender del tipo, la fecha ni lo clicado
+  opciones(sa, areas, v => v == '-' ? 'no area' : v, v => totalArea(v), 'World');   // todas las áreas: World
+  if (paisSel) sa.selectedIndex = -1;            // país clicado: área en blanco
+  // tras 'all', dos grupos: events (list, event, seminar, academy, milonga) y people (people, organizer, artist y el resto de roles)
+  const TEXTO_ROL = {vip: 'vip'};                // texto propio en wwt (en aux.js, para index.htm: mil+com+inf)
+  const PRIMEROS = {[LIS]: 'list', [EVT]: 'event', [SEM]: 'seminar', [ACA]: 'academy', [MIL]: 'milonga', [PEO]: 'people', org: 'organizer', art: 'artist'};
+  opciones($('selRol'), [{grupo: 'events', valores: [LIS, EVT, SEM, ACA, MIL]},
                          {grupo: 'people', valores: [PEO, 'org', 'art', ...Object.keys(ROLES).filter(v => !(v in PRIMEROS))]}],
-           v => PRIMEROS[v] || ROLES[v].nombre || v,
-           v => deListado.filter(p => enArea(p, a) && enPais(p, pa) && enRol(p, v)).length);
-  anchoBuscar();   // el selector de área cambia de ancho con sus opciones
+           v => PRIMEROS[v] || TEXTO_ROL[v] || ROLES[v].nombre || v,
+           v => personas.filter(p => enArea(p, areaCuenta) && enRol(p, v)).length);   // totales del tipo en el área elegida (con foto o sin ella, sin mirar la fecha)
+  const conFechas = deEventos(r) && !sinFecha(r);   // el panel de fechas, solo con eventos (las academias y las milongas no tienen fecha EVT)
+  const fs = conFechas && !soloBuscado ? fechaSel : null;   // sin él, o con una sugerencia elegida, sin filtro de fecha
+  $('fechas').classList.toggle('oculto', !conFechas);
+  // lo de un marcador o un país clicados (también para las cuentas del panel de fechas)
+  const enSel = p => (!lugarSel || (p.pos && clavePos(p.pos) == lugarSel))
+                  && (!ciudadSel || ciudadDe(p) == ciudadSel)
+                  && (!paisSel || paisSel.feature.properties.nombres.includes(p.pais));
+  // cuentas como en el listado (todos los eventos, también sin foto), igual que los selectores
+  if (conFechas) pintaFechas(i => deListado.filter(p => enArea(p, a) && enRol(p, r) && enFecha(p, i) && enSel(p)).length);
 
-  const lista = visibles.filter(p => enArea(p, a) && enPais(p, pa) && enRol(p, r))
+  const base = visibles.filter(p => enArea(p, a) && enRol(p, r) && enFecha(p, fs));   // lo que sale
+  // el mapa, lo del listado (también lo que no tiene foto: en la parrilla no sale). Con
+  // un país clicado, solo los marcadores de ese país, de su área (China: solo Asia); sin área, todo
+  const areaPais = paisSel && paisSel.feature.properties.area, aMapa = areaPais && areaPais != '-' ? areaPais : a;
+  // Las list de World, en el mapa solo con World (todas las áreas) elegido
+  const baseMapa = deListado.filter(p => enArea(p, aMapa) && enRol(p, r) && enFecha(p, fs)
+                                         && (!paisSel || paisSel.feature.properties.nombres.includes(p.pais))
+                                         && (p.area != MUNDIAL || aMapa == TODOS));
+  const lista = (soloBuscado && buscado ? base.filter(p => p === buscado)   // sugerencia elegida: solo ella
+                                        : base.filter(enSel))              // con un marcador o un país clicados, solo lo suyo
                         .sort((x, y) => !deEventos(r) ? x.nombre.localeCompare(y.nombre)
                                       : enListado ? desdeHoy(x) - desdeHoy(y) || x.nombre.localeCompare(y.nombre)   // listado: desde hoy (día y mes)
                                       : x.orden - y.orden || x.nombre.localeCompare(y.nombre));                     // parrilla: por fecha
+  pintaMapa(baseMapa, a);
   $('parrilla').classList.toggle('oculto', enListado);
   $('listado').classList.toggle('oculto', !enListado);
   if (enListado){
-    // listado: las mismas fichas que el diálogo, una debajo de otra
+    // listado: una línea por ficha (nombre - lugar), una debajo de otra; el
+    // click abre el detalle, la ficha entera en el diálogo
     const div = $('listado');
     div.innerHTML = '';
+    div.classList.toggle('filas', ESTILO_LISTADO == 'filas');
     for (const p of lista){
       const c = document.createElement('div');
-      c.className = 'cuerpo';
       c.id = 'f' + p.id;   // para ir a ella desde el buscador
-      rellena(c, p, true);
-      if (p.fb && !p.lista){
-        // la imagen (primer hijo de la ficha) abre el perfil o la web del evento
-        c.firstChild.style.cursor = 'pointer';
-        c.firstChild.onclick = () => window.open(p.fb, '_blank', 'noopener');
+      if (ESTILO_LISTADO == 'filas'){
+        // tres columnas: fecha, nombre, lugar
+        c.className = 'fila';
+        for (const [clase, texto] of [['fFecha', fechaListado(p)], ['fNombre', p.nombre], ['fLugar', p.lugar]]){
+          const s = document.createElement('span');
+          s.className = clase;
+          s.textContent = texto || '';
+          c.appendChild(s);
+        }
+      } else {
+        c.className = 'cuerpo linea';
+        titulo(c, p, true);
       }
+      c.onclick = () => abreFicha(p);
       div.appendChild(c);
     }
+    marcaAbierta();
     return;
   }
   const div = $('parrilla');
+  columnasParrilla(deEventos(r) || r == LIS);   // list, como los eventos
   div.innerHTML = '';
   for (const p of lista){
     const fig = document.createElement('figure');
-    fig.className = p.evento ? 'cara evt' : 'cara';
+    fig.className = p.evento || p.lista ? 'cara evt' : 'cara';   // list: imagen 16:9, como los eventos
     const img = cara(p);
     img.onclick = () => abreFicha(p);
     fig.appendChild(img);
@@ -484,6 +1114,7 @@ function pinta(){
     }
     const pie = document.createElement('figcaption');
     pie.textContent = p.nombre;
+    pie.onclick = () => abreFicha(p);            // el pie también abre la ficha, como la imagen
     fig.appendChild(pie);
     div.appendChild(fig);
   }
@@ -493,20 +1124,51 @@ function pinta(){
 // contiene lo escrito; primero las que empiezan así). Al elegir una, el listado
 // de su tipo (events/seminars o people) en su área, y la ficha a la vista
 let buscado = null, encontradas = [], activa = -1;
+let soloBuscado = false;   // tras elegir una sugerencia, solo ella (lo quita cambiar área, rol, fecha o el mapa)
 const MAX_SUGS = 50;          // coincidencias como mucho (se ven 10, el resto desplazando)
-const detalle = p => p.lista ? p.lugar || 'list' : p.evento ? [p.fecha, p.lugar].filter(Boolean).join(' ') || p.tipo : p.lugar || 'people';
+// tipo de una sugerencia, 3 letras como los códigos del selector de rol: EVT, SEM,
+// ACA, MIL, LIS; una persona, su primer rol (ORG, ART...) o PEO sin ninguno; un área, ARE; un país, CON; una ciudad, CIT
+const tipoSug = p => p.geo || String(p.roles[0] || PEO).slice(0, 3).toUpperCase();
+// áreas, países y ciudades de los datos, para las sugerencias: {geo: 'ARE' | 'CON' | 'CIT', nombre,
+// area (del país), pais y ciudad ('País|Ciudad', de la ciudad), clave}
+let geos = null;
+function lugaresSug(){
+  if (geos) return geos;
+  const areas = new Set(), paises = new Map(), ciudades = new Map();
+  for (const p of personas){
+    if (p.area && p.area != '-' && p.area != MUNDIAL) areas.add(p.area);
+    if (p.pais && p.pais != '-' && p.pais[0] == p.pais[0].toUpperCase()){   // no los de las list de un área (europe)
+      paises.set(p.pais, p.area);
+      if (p.ciudad && !p.ciudad.startsWith('*')) ciudades.set(ciudadDe(p), {nombre: p.ciudad, pais: p.pais});
+    }
+  }
+  geos = [...[...areas].map(a => ({geo: 'ARE', nombre: a})), ...[...paises].map(([n, a]) => ({geo: 'CON', nombre: n, area: a})),
+          ...[...ciudades].map(([k, c]) => ({geo: 'CIT', nombre: c.nombre, pais: c.pais, ciudad: k}))];
+  const n = new Map();                           // registros de cada uno, para ordenarlos (Seoul antes que Seogwipo)
+  for (const p of personas) for (const k of ['ARE|' + p.area, 'CON|' + p.pais, 'CIT|' + ciudadDe(p)]) n.set(k, (n.get(k) || 0) + 1);
+  geos.forEach(g => { g.clave = normaliza(g.nombre); g.n = n.get(g.geo + '|' + (g.geo == 'CIT' ? g.ciudad : g.nombre)) || 0; });
+  return geos;
+}
+const detalle = p => p.geo == 'ARE' ? 'area' : p.geo == 'CON' ? p.area : p.geo == 'CIT' ? p.pais : p.lista ? p.lugar || 'list' : p.evento ? [p.fecha, p.lugar].filter(Boolean).join(' ') || p.tipo : p.lugar || 'people';
 const normaliza = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 function sugerencias(){ personas.forEach(p => p.clave = normaliza(p.nombre)); }
 function muestra(){
   const q = normaliza($('buscar').value.trim()), d = $('sugs');
-  encontradas = !q ? [] : personas.filter(p => p.clave.includes(q))
-    .sort((x, y) => x.clave.startsWith(q) == y.clave.startsWith(q) ? x.nombre.localeCompare(y.nombre) : x.clave.startsWith(q) ? -1 : 1)
-    .slice(0, MAX_SUGS);
+  // primero las áreas, países y ciudades que coinciden (los de más registros antes), después los
+  // registros; en cada grupo, antes los que empiezan así
+  const orden = (x, y) => x.clave.startsWith(q) == y.clave.startsWith(q) ? x.nombre.localeCompare(y.nombre) : x.clave.startsWith(q) ? -1 : 1;
+  const ordenGeo = (x, y) => x.clave.startsWith(q) == y.clave.startsWith(q) ? y.n - x.n || x.nombre.localeCompare(y.nombre) : x.clave.startsWith(q) ? -1 : 1;
+  encontradas = !q ? [] : [...lugaresSug().filter(g => g.clave.includes(q)).sort(ordenGeo),
+                           ...personas.filter(p => p.clave.includes(q)).sort(orden)].slice(0, MAX_SUGS);
   activa = encontradas.length ? 0 : -1;
   d.innerHTML = '';
   encontradas.forEach((p, i) => {
     const o = document.createElement('div');
     o.innerHTML = '';
+    const tipo = document.createElement('span');   // tipo, en 3 letras: el código del selector de rol
+    tipo.className = 'tipo' + (p.geo ? ' geo' + p.geo : '');   // área, país y ciudad: en amarillo
+    tipo.textContent = tipoSug(p);
+    o.appendChild(tipo);
     o.append(p.nombre + ' ');
     const s = document.createElement('small');
     s.textContent = '— ' + detalle(p);
@@ -522,14 +1184,48 @@ function marca(i){
   [...$('sugs').children].forEach((o, k) => o.classList.toggle('activa', k == activa));
   $('sugs').children[activa].scrollIntoView({block: 'nearest'});   // la marcada, siempre a la vista
 }
+function irGeo(g){
+  // sugerencia de un área (al selector), de un país (activado en el mapa, como un click en él)
+  // o de una ciudad (su país activado y encuadrado, y solo lo de la ciudad: los eventos aún
+  // no tienen su lat/lon, casi todos están en el centro de su ciudad)
+  soloBuscado = false;
+  lugarSel = ciudadSel = paisSel = buscado = null;
+  enListado = true;                              // lo del área o el país, en el listado (y en el mapa)
+  if (g.geo == 'ARE'){
+    $('selArea').value = g.nombre;
+    pinta();
+  } else {
+    mapaAbierto = true;                          // el filtro de país va con el mapa: se abre
+    sinEncuadre = true;                          // este repintado no mueve el mapa: Leaflet descarta
+    pinta();                                     // un encuadre si llega con la animación del anterior en
+                                                 // marcha (solo crea el mapa y sus países si aún no estaban)
+    const pais = g.geo == 'CIT' ? g.pais : g.nombre;   // una ciudad: también su país (iluminado; el área, en blanco)
+    if (capaPaises) capaPaises.eachLayer(l => { if (!paisSel && l.feature.properties.nombres.includes(pais)) paisSel = l; });
+    if (g.geo == 'CIT') ciudadSel = g.ciudad;
+    pinta();
+    if (g.geo == 'CIT'){
+      const conPos = personas.find(p => ciudadDe(p) == g.ciudad && p.pos);
+      if (conPos) etiqueta(conPos.pos, g.nombre, 'ciudad');
+    } else if (paisSel) etiqueta(boundsPais(paisSel).getCenter(), g.nombre, 'pais');
+  }
+  $('buscar').value = '';
+  $('sugs').classList.add('oculto');
+  $('buscar').blur();
+}
 function ir(p){
+  if (p.geo) return irGeo(p);
   buscado = p;
-  $('chkListado').checked = true;
+  soloBuscado = true;
+  enListado = true;
   $('selRol').value = p.evento || p.lista ? p.roles[0] : PEO;
   $('selArea').value = p.area == MUNDIAL ? TODOS : p.area;
-  pinta();                                       // rehace los países del área
-  $('selPais').value = p.pais == '-' ? TODOS : p.pais;
+  fechaSel = F_DOCE;                             // sin filtro de fecha (soloBuscado), lugar ni país: que se vea; luego, YEAR
+  lugarSel = ciudadSel = paisSel = null;
+  // su país, activado en el mapa (como un click en él): iluminado, encuadrado y con su nombre
+  if (capaPaises && mapaAbierto) capaPaises.eachLayer(l => { if (!paisSel && l.feature.properties.nombres.includes(p.pais)) paisSel = l; });
   pinta();
+  if (paisSel) etiqueta(p.pos || paisSel.getBounds().getCenter(), paisSel.feature.properties.pais, 'pais');
+  iluminaFicha(p);                               // su marcador, iluminado
   const c = document.getElementById('f' + p.id);
   if (c){
     c.classList.add('encontrado');
@@ -553,24 +1249,20 @@ function muestraInfo(){
   $('fCuerpo').innerHTML = '';
   const d = document.createElement('div');
   d.className = 'texto';
-  // perfil de FB de KoKoTango: enlace y, en la última línea, invitación a mandar urls
+  // perfil de FB de KoKoTango: enlace y, en la última línea, invitación a mandar urls (con el sobre, img/mensaje.svg)
   const FB = 'https://www.facebook.com/profile.php?id=100093497583670';
-  d.innerHTML = '<p><a href="' + FB + '" target="_blank" rel="noopener">by KoKoTango</a></p><p>public version</p>' +
-                '<p><a href="' + FB + '" target="_blank" rel="noopener">send me a message with your urls</a></p>';
+  d.innerHTML = '<p><a href="' + FB + '" target="_blank" rel="noopener">by KoKoTango</a> (public version)</p>' +
+                '<p class="enlaces"><a href="' + FB + '" target="_blank" rel="noopener"><img src="img/mensaje.svg" alt="" class="icono">send me a message with your urls</a></p>' +
+                '<p>powered by Opus 5.5</p>' +
+                '<p class="creditos">map: tiles &copy; <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>, HERE, Garmin, ' +
+                '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors; ' +
+                'countries: <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>; ' +
+                '<a href="https://leafletjs.com/" target="_blank" rel="noopener">Leaflet</a></p>';
   $('fCuerpo').appendChild(d);
   $('ficha').showModal();
   return false;
 }
 
-// buscador: si los selectores bajan a la línea siguiente, la mitad de lo que hay
-// hasta el final del primero (área); en la misma línea, el ancho de siempre (7em)
-function anchoBuscar(){
-  const b = $('buscar'), sel = $('selArea');
-  b.style.width = b.style.maxWidth = '';
-  if (sel.offsetTop <= b.offsetTop) return;   // misma línea
-  const ancho = (sel.getBoundingClientRect().right - b.getBoundingClientRect().left) / 2;
-  if (ancho > b.offsetWidth){ b.style.width = ancho + 'px'; b.style.maxWidth = 'none'; }
-}
 function conecta(){
   // los controles de la página: buscador, info, ficha y selectores
   $('buscar').oninput = muestra;
@@ -580,8 +1272,27 @@ function conecta(){
   $('info').onclick = muestraInfo;
   $('fCerrar').onclick = () => $('ficha').close();
   $('ficha').onclick = e => { if (e.target == $('ficha')) $('ficha').close(); };   // click fuera: se cierra
-  for (const id of ['selArea', 'selPais', 'selRol', 'chkListado']) $(id).onchange = pinta;
-  window.addEventListener('resize', anchoBuscar);
+  $('dCerrar').onclick = cierraFicha;
+  $('bMapa').onclick = abreCierraMapa;
+  document.addEventListener('keydown', e => { if (e.key == 'Escape') cierraFicha(); });
+  $('selArea').onchange = () => { lugarSel = ciudadSel = paisSel = null; soloBuscado = false; pinta(); };
+  // tipo: fuera la ciudad (clicada o sugerida); el país se queda, con su encuadre
+  $('selRol').onchange = () => { lugarSel = ciudadSel = null; soloBuscado = false; pinta(); };
+  $('bListado').onclick = () => { enListado = !enListado; sinEncuadre = true; pinta(); };   // list: misma selección (país, ciudad) y el mapa quieto
+  // área: elegir la misma que ya está también cuenta (la vuelve a poner en el mapa
+  // y quita el país y el marcador clicados). Un <select> no avisa de eso: al abrirlo
+  // se deja sin opción, y si se cierra sin elegir, vuelve la que había
+  let areaAntes = null;
+  $('selArea').addEventListener('pointerdown', () => {
+    if ($('selArea').selectedIndex < 0) return;
+    areaAntes = $('selArea').value;
+    $('selArea').selectedIndex = -1;
+  });
+  $('selArea').addEventListener('blur', () => {
+    if ($('selArea').selectedIndex < 0 && areaAntes !== null) $('selArea').value = areaAntes;
+    areaAntes = null;
+  });
+  window.addEventListener('resize', () => columnasParrilla(soloEventos));
 }
 
 function arranca(){
