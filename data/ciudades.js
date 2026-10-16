@@ -63,6 +63,7 @@ var CIUDADES_COORD = {
 "China|Shanghai": [31.2304, 121.4737],
 "China|Shenyang": [41.8026, 123.4279],
 "China|Shenzhen": [22.5446, 114.0545],
+"China|Suzhou": [31.3111, 120.6213],
 "China|Tianjin": [39.0844, 117.1957],
 "China|Wuhan": [30.5789, 114.2921],
 "China|Xuhui": [31.1901, 121.4311],
