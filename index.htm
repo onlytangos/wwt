@@ -363,16 +363,21 @@ function proximaReg(f){
   }));
   return fechas.filter(d => d && d >= hoy).sort((a, b) => a - b)[0] || null;
 }
-// enlace a Google Maps de un evento: busca el nombre de su local y su dirección (o ciudad y país),
-// centrado en su lat/lon si los tiene (los suyos o los de su venue)
+// enlace a Google Maps de un evento: busca el nombre de su local, su dirección y, al final, ciudad y país
+// (los que no estén ya en la dirección); sin nada de eso, su lat/lon (los suyos o los de su venue).
+// Con api=1 Google Maps hace la búsqueda al abrir (la forma /maps/search/<texto>/@lat,lon solo la escribe)
 function mapaDe(e){
   const venue = venueDe(e), v = leeVarios(e), vv = venue ? leeVarios(venue) : {};
   const dir = (v.dir || vv.dir || [''])[0];
-  const texto = [(v.loc || [''])[0], dir || [e[CAMPO.city], e[CAMPO.country]].filter(x => x && x != '-').join(', ')].filter(Boolean).join(', ');
+  const lugar = [e[CAMPO.city], e[CAMPO.country]].map(x => String(x || '').trim())
+                .filter(x => x && x != '-' && !dir.toLowerCase().includes(x.toLowerCase()));
+  // sin trozos repetidos (el local suele ir también al principio de la dirección)
+  const trozos = [(v.loc || [''])[0], dir, ...lugar].join(', ').split(',').map(x => x.trim()).filter(Boolean);
+  const texto = trozos.filter((x, i) => trozos.findIndex(y => y.toLowerCase() == x.toLowerCase()) == i).join(', ');
   const la = parseFloat((v.lat || vv.lat || [])[0]), lo = parseFloat((v.lon || vv.lon || [])[0]);
   const conPos = !isNaN(la) && !isNaN(lo);
-  if (texto) return 'https://www.google.com/maps/search/' + encodeURIComponent(texto) + (conPos ? '/@' + la + ',' + lo + ',17z' : '');
-  return conPos ? 'https://www.google.com/maps/search/?api=1&query=' + la + ',' + lo : '';
+  const q = texto || (conPos ? la + ',' + lo : '');
+  return q ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q) : '';
 }
 function eventos(){
   const porClave = new Map(), lista = [];
