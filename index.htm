@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WWT</title>
-<!-- Todo se lee en su sitio, como index.htm: data/aux.js, data/*People.out.js y data/publicEvent.out.js (los crea import.sh)
-     y las fotos de review/foto0,1,2,9/ (fotoid.js lo genera review/fotoid.py). -->
-<script src="data/aux.js"></script>
-<script src="data/publicPeople.out.js"></script>
-<script src="data/publicEvent.out.js"></script>
-<script src="fotoid.js"></script>
-<script src="data/ciudades.js"></script>   <!-- coordenadas de las ciudades (import/coords.py), para el mapa -->
-<script src="data/paises.js"></script>     <!-- polígonos de los países (import/paises_geo.py), para el mapa -->
+<!-- Todo se lee en su sitio, como index.htm: datajs/aux.js, datajs/*People.out.js y datajs/publicEvent.out.js (los crea import.sh)
+     y las fotos de import/src.comun/fotos/foto0,1,2,9/ (fotoid.js lo genera import/fotoid.py). -->
+<script src="datajs/aux.js"></script>
+<script src="datajs/publicPeople.out.js"></script>
+<script src="datajs/publicEvent.out.js"></script>
+<script src="datajs/fotoid.js"></script>
+<script src="datajs/ciudades.js"></script>   <!-- coordenadas de las ciudades (import/coords.py), para el mapa -->
+<script src="datajs/paises.js"></script>     <!-- polígonos de los países (import/paises_geo.py), para el mapa -->
 <!-- mapa: Leaflet 1.9.4 (aquí, en leaflet/: sin depender de un CDN, que Brave puede bloquear en
      una página local) con teselas de Esri (gratis, sin clave, con su atribución) -->
 <link rel="stylesheet" href="leaflet/leaflet.css">
@@ -244,14 +244,14 @@ const MUNDIAL = 'World';                     // área de las list mundiales (pa�
 const $ = id => document.getElementById(id);
 
 // Foto (ruta) por el id del campo 9 (CAMPO.idfoto, "-" sin foto): la primera
-// que haya en review/foto0,1,2,9 (eventos 0,2,1,9: la portada antes), como index.htm
+// que haya en import/src.comun/fotos/foto0,1,2,9 (eventos 0,2,1,9: la portada antes), como index.htm
 function foto(idfoto, evento){
   const f = fotoDeId(idfoto, evento);    // aux.js
   return f ? FOTOS + f.carpeta + '/' + f.fichero : '';
 }
 
 // posición en el mapa [lat, lon] de una fila: su lat/lon (varios) o, sin ellos,
-// el centro de su ciudad (CIUDADES_COORD de data/ciudades.js); null si no hay
+// el centro de su ciudad (CIUDADES_COORD de datajs/ciudades.js); null si no hay
 const coordCiudad = r => (typeof CIUDADES_COORD == 'undefined' ? null
                           : CIUDADES_COORD[String(r[CAMPO.country]).trim() + '|' + String(r[CAMPO.city]).trim()]) || null;
 function coordDe(r){
@@ -445,7 +445,7 @@ function fotosDeLista(porClave){
 // List (opción list): las filas de publicEvent.out.js de tipo list; nombre, url, foto (como la portada de un evento)
 // y posición (para el mapa, posLista).
 // La url, la del campo url o, sin ella, la primera www: de varios (donde la traen las list)
-// centro [lat, lon] de un país (PAISES_GEO de data/paises.js): el del recuadro de su polígono
+// centro [lat, lon] de un país (PAISES_GEO de datajs/paises.js): el del recuadro de su polígono
 // más grande (Francia, sin sus islas lejanas); null si no está
 function centroPais(pais){
   if (typeof PAISES_GEO == 'undefined') return null;
@@ -796,7 +796,7 @@ function pintaFechas(cuenta, oculto){
 // el click en uno deja (en la parrilla o el listado, el que esté) solo lo de
 // ese lugar (lugarSel; otro click en él, o cambiar área, rol o fecha, lo
 // quita) y el mapa no se mueve. Sin nada con posición, el panel no sale.
-// Países (PAISES_GEO de data/paises.js): con un área elegida en el selector,
+// Países (PAISES_GEO de datajs/paises.js): con un área elegida en el selector,
 // sus países iluminados y el mapa encuadrado en sus marcadores; el click en un país lo
 // ilumina, lo encuadra y deja (en la parrilla o el listado, el que esté) solo lo suyo (otro click en él, o
 // cambiar área o rol, lo quita; la fecha y list no); sin nada, los marcadores de lo que sale
